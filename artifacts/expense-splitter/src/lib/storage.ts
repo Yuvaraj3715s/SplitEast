@@ -3,12 +3,23 @@ export interface Participant {
   name: string;
 }
 
+export type SplitMethod = "equal" | "percentage";
+
+export interface ExpenseParticipant {
+  id: string;
+  percentage?: number;
+}
+
 export interface Expense {
   id: string;
   description: string;
   amount: number;
   paidBy: string;
+  date?: string;
+  notes?: string;
+  splitMethod: SplitMethod;
   participantIds: string[];
+  participants: ExpenseParticipant[];
 }
 
 export interface Event {
@@ -21,26 +32,54 @@ export interface Event {
 
 const STORAGE_KEY = "expense-splitter-events";
 
+function migrateExpense(raw: any, allParticipantIds: string[]): Expense {
+  const participantIds: string[] = Array.isArray(raw.participantIds)
+    ? raw.participantIds
+    : allParticipantIds;
+
+  const splitMethod: SplitMethod = raw.splitMethod === "percentage" ? "percentage" : "equal";
+
+  let participants: ExpenseParticipant[] = Array.isArray(raw.participants)
+    ? raw.participants
+    : participantIds.map((id: string) => ({ id }));
+
+  return {
+    id: raw.id || crypto.randomUUID(),
+    description: raw.description || "Expense",
+    amount: typeof raw.amount === "number" ? raw.amount : 0,
+    paidBy: raw.paidBy,
+    date: raw.date,
+    notes: raw.notes,
+    splitMethod,
+    participantIds,
+    participants,
+  };
+}
+
 function migrateEvent(raw: any): Event {
   const participants: Participant[] = (raw.participants || []).map((p: any) => ({
     id: p.id,
     name: p.name,
   }));
+  const allIds = participants.map((p) => p.id);
 
-  let expenses: Expense[] = Array.isArray(raw.expenses) ? raw.expenses : [];
+  let rawExpenses: any[] = Array.isArray(raw.expenses) ? raw.expenses : [];
 
   if (!Array.isArray(raw.expenses) && Array.isArray(raw.participants)) {
-    const allIds = participants.map((p) => p.id);
-    expenses = raw.participants
+    rawExpenses = raw.participants
       .filter((p: any) => typeof p.amountPaid === "number" && p.amountPaid > 0)
       .map((p: any) => ({
         id: crypto.randomUUID(),
         description: "Contribution",
         amount: p.amountPaid,
         paidBy: p.id,
+        splitMethod: "equal",
         participantIds: allIds,
+        participants: allIds.map((id: string) => ({ id })),
       }));
   }
+
+  const expenses: Expense[] = rawExpenses.map((exp) => migrateExpense(exp, allIds));
 
   return {
     id: raw.id,

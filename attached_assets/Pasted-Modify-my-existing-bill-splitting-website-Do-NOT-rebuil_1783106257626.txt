@@ -1,0 +1,281 @@
+Modify my existing bill-splitting website. Do NOT rebuild it from scratch. Keep the current UI, design, event management, groups, and all existing functionality. Only extend the current application with the following features.
+
+## 1. Transaction-Specific Participants
+
+Currently every expense is split among all members in a group.
+
+Change this so that each expense can be split only among selected members.
+
+Example:
+
+Group:
+- Alice
+- Bob
+- Charlie
+- David
+
+Expense:
+Pizza – ₹900
+Paid by Alice
+
+Participants:
+☑ Alice
+☑ Bob
+☑ Charlie
+☐ David
+
+Result:
+Only Alice, Bob, and Charlie split the ₹900.
+Each owes ₹300.
+David owes ₹0.
+
+When creating or editing an expense:
+
+- Show all group members with checkboxes.
+- All members should be selected by default.
+- Allow selecting or deselecting participants.
+- Do not allow saving if zero participants are selected.
+- Display "Split among X people."
+
+Also include:
+- Select All button
+- Clear All button
+
+Store the selected participants inside every expense.
+
+---
+
+## 2. Split Methods
+
+Each expense should support multiple split methods.
+
+Add a Split Method selector:
+
+• Equal Split (default)
+• Percentage Split
+
+The user chooses which method to use for every expense.
+
+---
+
+## 3. Equal Split
+
+If Equal Split is selected:
+
+- Divide the expense equally among only the selected participants.
+- Ignore members that were not selected.
+
+Example:
+
+Expense ₹600
+
+Participants:
+Alice
+Bob
+Charlie
+
+Each owes ₹200.
+
+---
+
+## 4. Percentage Split
+
+If Percentage Split is selected:
+
+Display an editable percentage field beside every selected participant.
+
+Example:
+
+Hotel ₹10,000
+
+Paid by Alice
+
+Participants:
+
+☑ Alice — 50%
+☑ Bob — 20%
+☑ Charlie — 15%
+☑ David — 15%
+
+The website should calculate:
+
+Alice → ₹5000
+
+Bob → ₹2000
+
+Charlie → ₹1500
+
+David → ₹1500
+
+Another example:
+
+Taxi ₹800
+
+Paid by Bob
+
+Participants:
+
+☑ Bob → 50%
+☑ Charlie → 25%
+☑ David → 25%
+
+Result:
+
+Bob owes ₹400
+
+Charlie owes ₹200
+
+David owes ₹200
+
+---
+
+## 5. Validation
+
+For Percentage Split:
+
+- Percentages must total exactly 100%.
+- Prevent saving if total is not 100%.
+- Show live percentage total.
+- Highlight invalid totals in red.
+- Allow decimal percentages such as 33.33%.
+- No negative percentages.
+- Ignore unselected members.
+
+---
+
+## 6. Auto Distribution
+
+Add an "Auto Distribute" button.
+
+When clicked:
+
+- Divide 100% equally among selected participants.
+- Handle decimal rounding correctly.
+- Automatically update every participant's percentage.
+
+---
+
+## 7. Live Preview
+
+While editing an expense, display:
+
+Participant
+
+Percentage (if applicable)
+
+Calculated Amount
+
+Update instantly whenever:
+
+- Amount changes
+- Participants change
+- Percentages change
+
+---
+
+## 8. Settlement Calculations
+
+Update all calculations to support both split methods.
+
+For every member calculate:
+
+- Total Paid
+- Total Share
+- Net Balance
+
+Net Balance = Total Paid − Total Share
+
+Only include expenses where the member is a participant.
+
+---
+
+## 9. Settlement Algorithm
+
+Generate the minimum number of transactions required to settle balances.
+
+Example:
+
+Charlie → Alice ₹250
+
+David → Bob ₹180
+
+The existing settlement algorithm should continue working with the new split methods.
+
+---
+
+## 10. Edit Expenses
+
+Users must be able to edit:
+
+- Amount
+- Payer
+- Participants
+- Split Method
+- Percentages
+- Notes
+- Date
+
+Deleting or editing an expense should instantly recalculate balances.
+
+---
+
+## 11. UI Improvements
+
+Maintain the current design.
+
+Add:
+
+- Participant avatars or initials
+- Percentage inputs
+- Live calculated amount beside each participant
+- Split Method selector
+- Select All button
+- Clear All button
+- Auto Distribute button
+- Live "Total Percentage = 100%" indicator
+- Responsive layout for mobile and desktop
+
+---
+
+## 12. Data Model
+
+Update each expense to support:
+
+{
+  "title": "Hotel",
+  "amount": 10000,
+  "paidBy": "alice",
+  "splitMethod": "percentage",
+  "participants": [
+    {
+      "id": "alice",
+      "percentage": 50
+    },
+    {
+      "id": "bob",
+      "percentage": 20
+    },
+    {
+      "id": "charlie",
+      "percentage": 15
+    },
+    {
+      "id": "david",
+      "percentage": 15
+    }
+  ]
+}
+
+For Equal Split, percentages do not need to be stored.
+
+---
+
+## 13. Requirements
+
+- Do NOT redesign the application.
+- Do NOT remove existing features.
+- Preserve the current project structure.
+- Only modify the necessary components.
+- Recalculate everything automatically whenever an expense changes.
+- Ensure all calculations remain accurate across many expenses, multiple groups, equal splits, and percentage splits.
+- Keep the website fast, responsive, and bug-free.

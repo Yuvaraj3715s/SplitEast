@@ -6,12 +6,27 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, UserPlus, Trash2, Edit2, Receipt, ArrowRight, Users, Plus, ListChecks } from "lucide-react";
-import { getEvents, saveEvents, Event, Participant, Expense } from "@/lib/storage";
-import { calculateBalances, calculateSettlements, formatCurrency } from "@/lib/calculations";
+import { ArrowLeft, UserPlus, Trash2, Edit2, Receipt, ArrowRight, Users, Plus, ListChecks, Wand2 } from "lucide-react";
+import { getEvents, saveEvents, Event, Participant, Expense, SplitMethod, ExpenseParticipant } from "@/lib/storage";
+import { calculateBalances, calculateSettlements, getExpenseShares, formatCurrency } from "@/lib/calculations";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
+
+function getInitials(name: string): string {
+  const parts = name.trim().split(/\s+/);
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function Avatar({ name }: { name: string }) {
+  return (
+    <div className="w-8 h-8 rounded-full bg-primary/15 text-primary flex items-center justify-center text-xs font-semibold shrink-0">
+      {getInitials(name)}
+    </div>
+  );
+}
 
 export default function EventDetail() {
   const { id } = useParams();
@@ -27,7 +42,11 @@ export default function EventDetail() {
   const [expenseDescription, setExpenseDescription] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expensePaidBy, setExpensePaidBy] = useState("");
+  const [expenseDate, setExpenseDate] = useState("");
+  const [expenseNotes, setExpenseNotes] = useState("");
+  const [expenseSplitMethod, setExpenseSplitMethod] = useState<SplitMethod>("equal");
   const [expenseParticipantIds, setExpenseParticipantIds] = useState<string[]>([]);
+  const [expensePercentages, setExpensePercentages] = useState<Record<string, number>>({});
   const [expenseError, setExpenseError] = useState("");
 
   useEffect(() => {
@@ -93,6 +112,7 @@ export default function EventDetail() {
       .map((exp) => ({
         ...exp,
         participantIds: exp.participantIds.filter((pid) => pid !== participantId),
+        participants: exp.participants.filter((ep) => ep.id !== participantId),
       }))
       .filter((exp) => exp.participantIds.length > 0);
 
@@ -111,11 +131,27 @@ export default function EventDetail() {
 
   // ---- Expenses ----
 
+  const equalPercentages = (ids: string[]): Record<string, number> => {
+    const map: Record<string, number> = {};
+    if (ids.length === 0) return map;
+    const base = Math.floor((100 / ids.length) * 100) / 100;
+    const remainder = Math.round((100 - base * ids.length) * 100) / 100;
+    ids.forEach((id, i) => {
+      map[id] = i === 0 ? Math.round((base + remainder) * 100) / 100 : base;
+    });
+    return map;
+  };
+
   const resetExpenseForm = () => {
+    const allIds = event?.participants.map((p) => p.id) || [];
     setExpenseDescription("");
     setExpenseAmount("");
     setExpensePaidBy(event?.participants[0]?.id || "");
-    setExpenseParticipantIds(event?.participants.map((p) => p.id) || []);
+    setExpenseDate("");
+    setExpenseNotes("");
+    setExpenseSplitMethod("equal");
+    setExpenseParticipantIds(allIds);
+    setExpensePercentages(equalPercentages(allIds));
     setExpenseError("");
     setEditingExpense(null);
   };
@@ -130,25 +166,92 @@ export default function EventDetail() {
     setExpenseDescription(expense.description);
     setExpenseAmount(expense.amount.toString());
     setExpensePaidBy(expense.paidBy);
+    setExpenseDate(expense.date || "");
+    setExpenseNotes(expense.notes || "");
+    setExpenseSplitMethod(expense.splitMethod);
     setExpenseParticipantIds(expense.participantIds);
+    const pctMap: Record<string, number> = {};
+    expense.participants.forEach((ep) => {
+      if (typeof ep.percentage === "number") pctMap[ep.id] = ep.percentage;
+    });
+    setExpensePercentages(
+      Object.keys(pctMap).length > 0 ? pctMap : equalPercentages(expense.participantIds)
+    );
     setExpenseError("");
     setIsExpenseOpen(true);
   };
 
   const toggleExpenseParticipant = (participantId: string) => {
-    setExpenseParticipantIds((prev) =>
-      prev.includes(participantId) ? prev.filter((id) => id !== participantId) : [...prev, participantId]
-    );
+    setExpenseParticipantIds((prev) => {
+      const next = prev.includes(participantId)
+        ? prev.filter((id) => id !== participantId)
+        : [...prev, participantId];
+      setExpensePercentages((prevPct) => {
+        const nextPct = { ...prevPct };
+        if (!next.includes(participantId)) {
+          delete nextPct[participantId];
+        } else if (!(participantId in nextPct)) {
+          nextPct[participantId] = 0;
+        }
+        return nextPct;
+      });
+      return next;
+    });
   };
 
   const selectAllParticipants = () => {
     if (!event) return;
-    setExpenseParticipantIds(event.participants.map((p) => p.id));
+    const allIds = event.participants.map((p) => p.id);
+    setExpenseParticipantIds(allIds);
+    setExpensePercentages((prev) => {
+      const next = { ...prev };
+      allIds.forEach((id) => {
+        if (!(id in next)) next[id] = 0;
+      });
+      return next;
+    });
   };
 
   const clearAllParticipants = () => {
     setExpenseParticipantIds([]);
+    setExpensePercentages({});
   };
+
+  const handleAutoDistribute = () => {
+    setExpensePercentages((prev) => ({ ...prev, ...equalPercentages(expenseParticipantIds) }));
+  };
+
+  const handlePercentageChange = (participantId: string, value: string) => {
+    const parsed = parseFloat(value);
+    setExpensePercentages((prev) => ({
+      ...prev,
+      [participantId]: value === "" ? 0 : isNaN(parsed) ? 0 : Math.max(0, parsed),
+    }));
+  };
+
+  const percentageTotal = useMemo(() => {
+    return expenseParticipantIds.reduce((sum, id) => sum + (expensePercentages[id] || 0), 0);
+  }, [expenseParticipantIds, expensePercentages]);
+
+  const isPercentageValid = Math.abs(percentageTotal - 100) < 0.01;
+
+  const livePreviewShares = useMemo(() => {
+    const parsedAmount = parseFloat(expenseAmount) || 0;
+    const shares: Record<string, number> = {};
+    if (expenseParticipantIds.length === 0) return shares;
+
+    if (expenseSplitMethod === "percentage") {
+      expenseParticipantIds.forEach((id) => {
+        shares[id] = (parsedAmount * (expensePercentages[id] || 0)) / 100;
+      });
+    } else {
+      const share = parsedAmount / expenseParticipantIds.length;
+      expenseParticipantIds.forEach((id) => {
+        shares[id] = share;
+      });
+    }
+    return shares;
+  }, [expenseAmount, expenseSplitMethod, expenseParticipantIds, expensePercentages]);
 
   const handleSaveExpense = (e: React.FormEvent) => {
     e.preventDefault();
@@ -172,6 +275,15 @@ export default function EventDetail() {
       setExpenseError("Select at least one person to split this expense among.");
       return;
     }
+    if (expenseSplitMethod === "percentage" && !isPercentageValid) {
+      setExpenseError("Percentages must add up to exactly 100%.");
+      return;
+    }
+
+    const participants: ExpenseParticipant[] =
+      expenseSplitMethod === "percentage"
+        ? expenseParticipantIds.map((id) => ({ id, percentage: expensePercentages[id] || 0 }))
+        : expenseParticipantIds.map((id) => ({ id }));
 
     if (editingExpense) {
       const updatedExpenses = event.expenses.map((exp) =>
@@ -181,7 +293,11 @@ export default function EventDetail() {
               description: expenseDescription.trim(),
               amount: parsedAmount,
               paidBy: expensePaidBy,
+              date: expenseDate || undefined,
+              notes: expenseNotes.trim() || undefined,
+              splitMethod: expenseSplitMethod,
               participantIds: expenseParticipantIds,
+              participants,
             }
           : exp
       );
@@ -192,7 +308,11 @@ export default function EventDetail() {
         description: expenseDescription.trim(),
         amount: parsedAmount,
         paidBy: expensePaidBy,
+        date: expenseDate || undefined,
+        notes: expenseNotes.trim() || undefined,
+        splitMethod: expenseSplitMethod,
         participantIds: expenseParticipantIds,
+        participants,
       };
       updateEvent({ ...event, expenses: [...event.expenses, newExpense] });
     }
@@ -250,7 +370,7 @@ export default function EventDetail() {
             </p>
           </div>
 
-          <div className="flex gap-2">
+          <div className="flex flex-wrap gap-2">
             <Dialog
               open={isAddPersonOpen}
               onOpenChange={(open) => {
@@ -352,58 +472,79 @@ export default function EventDetail() {
                 ) : (
                   <div className="space-y-3">
                     <AnimatePresence>
-                      {event.expenses.map((expense) => (
-                        <motion.div
-                          key={expense.id}
-                          layout
-                          initial={{ opacity: 0, scale: 0.95 }}
-                          animate={{ opacity: 1, scale: 1 }}
-                          exit={{ opacity: 0, scale: 0.9 }}
-                          transition={{ duration: 0.15 }}
-                        >
-                          <Card className="overflow-hidden hover:border-primary/30 transition-colors">
-                            <div className="p-4 sm:p-5 flex justify-between items-start gap-3">
-                              <div className="flex-1 min-w-0">
-                                <div className="flex items-center justify-between gap-2">
-                                  <h3 className="font-semibold text-base truncate" data-testid={`text-expense-description-${expense.id}`}>
-                                    {expense.description}
-                                  </h3>
-                                  <span className="font-bold text-foreground shrink-0" data-testid={`text-expense-amount-${expense.id}`}>
-                                    {formatCurrency(expense.amount)}
-                                  </span>
+                      {event.expenses.map((expense) => {
+                        const shares = getExpenseShares(expense);
+                        return (
+                          <motion.div
+                            key={expense.id}
+                            layout
+                            initial={{ opacity: 0, scale: 0.95 }}
+                            animate={{ opacity: 1, scale: 1 }}
+                            exit={{ opacity: 0, scale: 0.9 }}
+                            transition={{ duration: 0.15 }}
+                          >
+                            <Card className="overflow-hidden hover:border-primary/30 transition-colors">
+                              <div className="p-4 sm:p-5 flex justify-between items-start gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center justify-between gap-2">
+                                    <h3 className="font-semibold text-base truncate" data-testid={`text-expense-description-${expense.id}`}>
+                                      {expense.description}
+                                    </h3>
+                                    <span className="font-bold text-foreground shrink-0" data-testid={`text-expense-amount-${expense.id}`}>
+                                      {formatCurrency(expense.amount)}
+                                    </span>
+                                  </div>
+                                  <p className="text-sm text-muted-foreground mt-1">
+                                    Paid by <span className="font-medium text-foreground">{getParticipantName(expense.paidBy)}</span>
+                                    {expense.date && <span> · {format(new Date(expense.date), "MMM d, yyyy")}</span>}
+                                  </p>
+                                  <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1" data-testid={`text-expense-split-${expense.id}`}>
+                                    <Users className="w-3.5 h-3.5" />
+                                    Split among {expense.participantIds.length} people
+                                    <span className="ml-1 px-1.5 py-0.5 rounded bg-secondary/60 text-xs font-medium capitalize">
+                                      {expense.splitMethod}
+                                    </span>
+                                  </p>
+                                  {expense.notes && (
+                                    <p className="text-sm text-muted-foreground mt-1 italic">{expense.notes}</p>
+                                  )}
+                                  <div className="flex flex-wrap gap-1.5 mt-2">
+                                    {expense.participantIds.map((pid) => (
+                                      <span
+                                        key={pid}
+                                        className="text-xs bg-secondary/50 text-foreground px-2 py-0.5 rounded-full"
+                                        data-testid={`badge-expense-participant-${expense.id}-${pid}`}
+                                      >
+                                        {getParticipantName(pid)}: {formatCurrency(shares[pid] || 0)}
+                                      </span>
+                                    ))}
+                                  </div>
                                 </div>
-                                <p className="text-sm text-muted-foreground mt-1">
-                                  Paid by <span className="font-medium text-foreground">{getParticipantName(expense.paidBy)}</span>
-                                </p>
-                                <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1" data-testid={`text-expense-split-${expense.id}`}>
-                                  <Users className="w-3.5 h-3.5" />
-                                  Split among {expense.participantIds.length} people
-                                </p>
+                                <div className="flex gap-1 shrink-0">
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                                    onClick={() => openEditExpense(expense)}
+                                    data-testid={`button-edit-expense-${expense.id}`}
+                                  >
+                                    <Edit2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                  <Button
+                                    variant="ghost"
+                                    size="icon"
+                                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                                    onClick={() => handleDeleteExpense(expense.id)}
+                                    data-testid={`button-delete-expense-${expense.id}`}
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </Button>
+                                </div>
                               </div>
-                              <div className="flex gap-1 shrink-0">
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-muted-foreground hover:text-foreground"
-                                  onClick={() => openEditExpense(expense)}
-                                  data-testid={`button-edit-expense-${expense.id}`}
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" />
-                                </Button>
-                                <Button
-                                  variant="ghost"
-                                  size="icon"
-                                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                                  onClick={() => handleDeleteExpense(expense.id)}
-                                  data-testid={`button-delete-expense-${expense.id}`}
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </Button>
-                              </div>
-                            </div>
-                          </Card>
-                        </motion.div>
-                      ))}
+                            </Card>
+                          </motion.div>
+                        );
+                      })}
                     </AnimatePresence>
                   </div>
                 )}
@@ -430,9 +571,12 @@ export default function EventDetail() {
                           <div className="p-4 sm:p-5 flex justify-between items-center">
                             <div className="flex-1">
                               <div className="flex justify-between items-start mb-2">
-                                <h3 className="font-semibold text-lg" data-testid={`text-name-${b.id}`}>
-                                  {b.name}
-                                </h3>
+                                <div className="flex items-center gap-2">
+                                  <Avatar name={b.name} />
+                                  <h3 className="font-semibold text-lg" data-testid={`text-name-${b.id}`}>
+                                    {b.name}
+                                  </h3>
+                                </div>
                                 <div className="flex gap-1">
                                   <Button
                                     variant="ghost"
@@ -560,7 +704,7 @@ export default function EventDetail() {
             if (!open) resetExpenseForm();
           }}
         >
-          <DialogContent className="max-h-[85vh] overflow-y-auto">
+          <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
             <form onSubmit={handleSaveExpense}>
               <DialogHeader>
                 <DialogTitle>{editingExpense ? "Edit Expense" : "Add Expense"}</DialogTitle>
@@ -577,18 +721,30 @@ export default function EventDetail() {
                     autoFocus
                   />
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="expense-amount">Amount ($)</Label>
-                  <Input
-                    id="expense-amount"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0.00"
-                    value={expenseAmount}
-                    onChange={(e) => setExpenseAmount(e.target.value)}
-                    data-testid="input-expense-amount"
-                  />
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="expense-amount">Amount ($)</Label>
+                    <Input
+                      id="expense-amount"
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      placeholder="0.00"
+                      value={expenseAmount}
+                      onChange={(e) => setExpenseAmount(e.target.value)}
+                      data-testid="input-expense-amount"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="expense-date">Date</Label>
+                    <Input
+                      id="expense-date"
+                      type="date"
+                      value={expenseDate}
+                      onChange={(e) => setExpenseDate(e.target.value)}
+                      data-testid="input-expense-date"
+                    />
+                  </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="expense-paid-by">Paid By</Label>
@@ -605,8 +761,29 @@ export default function EventDetail() {
                     </SelectContent>
                   </Select>
                 </div>
+
                 <div className="space-y-2">
-                  <div className="flex items-center justify-between">
+                  <Label htmlFor="expense-split-method">Split Method</Label>
+                  <Select
+                    value={expenseSplitMethod}
+                    onValueChange={(val) => setExpenseSplitMethod(val as SplitMethod)}
+                  >
+                    <SelectTrigger id="expense-split-method" data-testid="select-split-method">
+                      <SelectValue placeholder="Select split method" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="equal" data-testid="option-split-equal">
+                        Equal Split
+                      </SelectItem>
+                      <SelectItem value="percentage" data-testid="option-split-percentage">
+                        Percentage Split
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between flex-wrap gap-2">
                     <Label>Split Among</Label>
                     <div className="flex gap-2">
                       <Button
@@ -629,28 +806,95 @@ export default function EventDetail() {
                       >
                         Clear All
                       </Button>
+                      {expenseSplitMethod === "percentage" && (
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={handleAutoDistribute}
+                          disabled={expenseParticipantIds.length === 0}
+                          data-testid="button-auto-distribute"
+                        >
+                          <Wand2 className="w-3 h-3 mr-1" />
+                          Auto Distribute
+                        </Button>
+                      )}
                     </div>
                   </div>
-                  <div className="border rounded-md divide-y max-h-48 overflow-y-auto">
-                    {event.participants.map((p) => (
-                      <label
-                        key={p.id}
-                        className="flex items-center gap-3 p-3 cursor-pointer hover:bg-secondary/40 transition-colors"
-                        data-testid={`row-split-participant-${p.id}`}
-                      >
-                        <Checkbox
-                          checked={expenseParticipantIds.includes(p.id)}
-                          onCheckedChange={() => toggleExpenseParticipant(p.id)}
-                          data-testid={`checkbox-split-participant-${p.id}`}
-                        />
-                        <span className="text-sm font-medium">{p.name}</span>
-                      </label>
-                    ))}
+
+                  <div className="border rounded-md divide-y max-h-64 overflow-y-auto">
+                    {event.participants.map((p) => {
+                      const checked = expenseParticipantIds.includes(p.id);
+                      return (
+                        <div
+                          key={p.id}
+                          className="flex items-center gap-3 p-3 hover:bg-secondary/40 transition-colors"
+                          data-testid={`row-split-participant-${p.id}`}
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={() => toggleExpenseParticipant(p.id)}
+                            data-testid={`checkbox-split-participant-${p.id}`}
+                          />
+                          <Avatar name={p.name} />
+                          <span className="text-sm font-medium flex-1 truncate">{p.name}</span>
+
+                          {checked && expenseSplitMethod === "percentage" && (
+                            <div className="flex items-center gap-1">
+                              <Input
+                                type="number"
+                                min="0"
+                                step="0.01"
+                                value={expensePercentages[p.id] ?? 0}
+                                onChange={(e) => handlePercentageChange(p.id, e.target.value)}
+                                className="w-20 h-8 text-sm"
+                                data-testid={`input-percentage-${p.id}`}
+                              />
+                              <span className="text-sm text-muted-foreground">%</span>
+                            </div>
+                          )}
+
+                          {checked && (
+                            <span
+                              className="text-sm font-medium text-foreground bg-secondary/50 px-2 py-0.5 rounded shrink-0"
+                              data-testid={`text-live-share-${p.id}`}
+                            >
+                              {formatCurrency(livePreviewShares[p.id] || 0)}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
-                  <p className="text-sm text-muted-foreground" data-testid="text-split-count">
-                    Split among {expenseParticipantIds.length} {expenseParticipantIds.length === 1 ? "person" : "people"}.
-                  </p>
+
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm text-muted-foreground" data-testid="text-split-count">
+                      Split among {expenseParticipantIds.length} {expenseParticipantIds.length === 1 ? "person" : "people"}.
+                    </p>
+                    {expenseSplitMethod === "percentage" && (
+                      <p
+                        className={`text-sm font-medium ${isPercentageValid ? "text-emerald-600" : "text-destructive"}`}
+                        data-testid="text-percentage-total"
+                      >
+                        Total: {percentageTotal.toFixed(2)}%
+                      </p>
+                    )}
+                  </div>
                 </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="expense-notes">Notes (optional)</Label>
+                  <Textarea
+                    id="expense-notes"
+                    placeholder="Add any notes..."
+                    value={expenseNotes}
+                    onChange={(e) => setExpenseNotes(e.target.value)}
+                    data-testid="input-expense-notes"
+                    rows={2}
+                  />
+                </div>
+
                 {expenseError && (
                   <p className="text-sm text-destructive" data-testid="text-expense-error">
                     {expenseError}

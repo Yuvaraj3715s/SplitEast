@@ -14,6 +14,27 @@ export interface Settlement {
   amount: number;
 }
 
+export function getExpenseShares(expense: Expense): Record<string, number> {
+  const shares: Record<string, number> = {};
+  const participantIds = expense.participantIds;
+  if (participantIds.length === 0) return shares;
+
+  if (expense.splitMethod === "percentage") {
+    participantIds.forEach((id) => {
+      const p = expense.participants.find((ep) => ep.id === id);
+      const pct = p?.percentage || 0;
+      shares[id] = (expense.amount * pct) / 100;
+    });
+  } else {
+    const share = expense.amount / participantIds.length;
+    participantIds.forEach((id) => {
+      shares[id] = share;
+    });
+  }
+
+  return shares;
+}
+
 export function calculateBalances(participants: Participant[], expenses: Expense[]): ParticipantBalance[] {
   const paidMap = new Map<string, number>();
   const owedMap = new Map<string, number>();
@@ -28,13 +49,11 @@ export function calculateBalances(participants: Participant[], expenses: Expense
       paidMap.set(expense.paidBy, (paidMap.get(expense.paidBy) || 0) + expense.amount);
     }
 
-    const validParticipantIds = expense.participantIds.filter((id) => owedMap.has(id));
-    const splitCount = validParticipantIds.length;
-    if (splitCount === 0) return;
-
-    const share = expense.amount / splitCount;
-    validParticipantIds.forEach((id) => {
-      owedMap.set(id, (owedMap.get(id) || 0) + share);
+    const shares = getExpenseShares(expense);
+    Object.entries(shares).forEach(([id, amount]) => {
+      if (owedMap.has(id)) {
+        owedMap.set(id, (owedMap.get(id) || 0) + amount);
+      }
     });
   });
 
