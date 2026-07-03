@@ -1,0 +1,292 @@
+Modify and enhance my existing bill-splitting website. Do NOT rebuild the application or change the existing UI. Only extend the current functionality with the following advanced features.
+
+# Feature 1: Multiple Payers for a Single Expense
+
+Currently, each expense can have only one payer.
+
+Modify the application so that a single expense can have multiple people contributing to the payment.
+
+## Payment Methods
+
+When creating an expense, allow the user to choose:
+
+• Single Payer (default)
+• Multiple Payers
+
+## Multiple Payers
+
+If "Multiple Payers" is selected:
+
+Display every group member with an amount input showing how much they actually paid.
+
+Example:
+
+Expense: Dinner
+Total Amount: ₹400
+
+Payments:
+
+Alice → ₹70
+
+Bob → ₹200
+
+Charlie → ₹130
+
+David → ₹0
+
+The total of all payments must always equal the expense amount (₹400).
+
+## Validation
+
+- The sum of all payments must always equal the total expense amount.
+- Prevent saving if the payment total is not equal to the expense amount.
+- Show a live indicator:
+  "Paid: ₹370 / ₹400"
+- Highlight invalid totals in red.
+- Allow ₹0 payments.
+- Do not allow negative values.
+- Support decimal amounts.
+
+## Auto Fill Remaining
+
+Add an "Auto Fill Remaining" button.
+
+Example:
+
+Expense = ₹400
+
+Alice = ₹70
+Bob = ₹200
+
+When the user clicks Auto Fill Remaining, automatically assign the remaining ₹130 to the last payer (or let the user choose which payer receives the remaining amount).
+
+## Settlement Logic
+
+The amount each person paid should be calculated using these payment contributions.
+
+Example:
+
+Expense ₹400
+
+Payments:
+
+Alice = ₹70
+
+Bob = ₹200
+
+Charlie = ₹130
+
+Split Method = Equal
+
+Participants:
+
+Alice
+
+Bob
+
+Charlie
+
+David
+
+Each person's share = ₹100
+
+Final balances:
+
+Alice
+Paid ₹70
+Share ₹100
+Net = -₹30
+
+Bob
+Paid ₹200
+Share ₹100
+Net = +₹100
+
+Charlie
+Paid ₹130
+Share ₹100
+Net = +₹30
+
+David
+Paid ₹0
+Share ₹100
+Net = -₹100
+
+The settlement algorithm should automatically use these balances.
+
+## Compatibility
+
+Multiple Payers must work with:
+
+- Equal Split
+- Percentage Split
+
+No existing functionality should break.
+
+------------------------------------------------------------
+
+# Feature 2: Intelligent Automatic Percentage Split
+
+Improve the Percentage Split feature.
+
+Do NOT require users to manually enter percentages for every participant.
+
+Instead, automatically distribute the remaining percentage among the other selected participants.
+
+## Behaviour
+
+Example 1
+
+Participants:
+
+Alice
+
+Bob
+
+Charlie
+
+If I type
+
+Alice = 50%
+
+Automatically calculate
+
+Bob = 25%
+
+Charlie = 25%
+
+------------------------------------------------------------
+
+Example 2
+
+Participants
+
+Alice
+
+Bob
+
+Charlie
+
+David
+
+If I type
+
+Alice = 40%
+
+Automatically calculate
+
+Bob = 20%
+
+Charlie = 20%
+
+David = 20%
+
+------------------------------------------------------------
+
+Example 3
+
+If I then change
+
+Bob = 30%
+
+Automatically calculate
+
+Remaining = 100 - 40 - 30 = 30
+
+Charlie = 15%
+
+David = 15%
+
+------------------------------------------------------------
+
+Example 4
+
+If I later change
+
+Alice = 60%
+
+Keep Bob at 30%
+
+Automatically calculate
+
+Remaining = 10%
+
+Charlie = 5%
+
+David = 5%
+
+------------------------------------------------------------
+
+## Locked Percentages
+
+Whenever a user manually edits a percentage, treat that participant as "locked."
+
+Only redistribute percentages among participants that are not locked.
+
+Show a small lock icon beside manually edited percentages.
+
+Allow the user to click the lock icon to unlock a participant so their percentage becomes automatic again.
+
+## Validation
+
+- Total percentage must always equal exactly 100%.
+- Show a live percentage total.
+- Prevent saving if locked percentages exceed 100%.
+- Support decimal percentages.
+- Handle rounding correctly.
+- No negative percentages.
+
+## Live Updates
+
+Whenever any value changes:
+
+- Expense amount
+- Participants
+- Percentages
+
+Instantly update:
+
+- Percentage for each participant
+- Amount owed by each participant
+- Remaining percentage
+- Total percentage
+
+No page refresh should be needed.
+
+## Participant Changes
+
+If a participant is added:
+
+Automatically redistribute the remaining percentage.
+
+If a participant is removed:
+
+Redistribute their percentage among the remaining unlocked participants.
+
+Locked percentages should remain unchanged whenever possible.
+
+## UI Improvements
+
+Show:
+
+- Percentage input
+- Lock icon
+- Calculated amount beside each participant
+- Live total percentage (100%)
+- Auto Distribute button
+- Auto Fill Remaining button for payment contributions
+
+Everything should update in real time.
+
+------------------------------------------------------------
+
+# General Requirements
+
+- Preserve the existing project structure.
+- Do not redesign the application.
+- Do not remove any existing functionality.
+- Ensure all calculations remain accurate.
+- Keep the application fast and responsive.
+- Support multiple groups and many expenses.
+- Ensure all settlement calculations continue to generate the minimum number of transactions.
+- The new features should integrate seamlessly with all existing Equal Split, Percentage Split, participant selection, expense editing, and settlement functionality.

@@ -8,9 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, UserPlus, Trash2, Edit2, Receipt, ArrowRight, Users, Plus, ListChecks, Wand2 } from "lucide-react";
-import { getEvents, saveEvents, Event, Participant, Expense, SplitMethod, ExpenseParticipant } from "@/lib/storage";
-import { calculateBalances, calculateSettlements, getExpenseShares, formatCurrency } from "@/lib/calculations";
+import { ArrowLeft, UserPlus, Trash2, Edit2, Receipt, ArrowRight, Users, Plus, ListChecks, Wand2, Lock, Unlock, Coins } from "lucide-react";
+import { getEvents, saveEvents, Event, Participant, Expense, SplitMethod, PaymentMethod, ExpenseParticipant } from "@/lib/storage";
+import { calculateBalances, calculateSettlements, getExpenseShares, getExpensePayments, distributeEqually, formatCurrency } from "@/lib/calculations";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
 
@@ -28,6 +28,27 @@ function Avatar({ name }: { name: string }) {
   );
 }
 
+function recomputeRedistribution(
+  participantIds: string[],
+  lockedIds: string[],
+  percentages: Record<string, number>
+): Record<string, number> {
+  const locked = participantIds.filter((id) => lockedIds.includes(id));
+  const unlocked = participantIds.filter((id) => !lockedIds.includes(id));
+  const lockedSum = locked.reduce((sum, id) => sum + (percentages[id] || 0), 0);
+  const remaining = Math.round(Math.max(0, 100 - lockedSum) * 100) / 100;
+  const shares = distributeEqually(remaining, unlocked.length);
+
+  const next: Record<string, number> = {};
+  locked.forEach((id) => {
+    next[id] = percentages[id] || 0;
+  });
+  unlocked.forEach((id, i) => {
+    next[id] = shares[i];
+  });
+  return next;
+}
+
 export default function EventDetail() {
   const { id } = useParams();
   const [event, setEvent] = useState<Event | null>(null);
@@ -41,12 +62,16 @@ export default function EventDetail() {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null);
   const [expenseDescription, setExpenseDescription] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
+  const [expensePaymentMethod, setExpensePaymentMethod] = useState<PaymentMethod>("single");
   const [expensePaidBy, setExpensePaidBy] = useState("");
+  const [expensePayments, setExpensePayments] = useState<Record<string, number>>({});
+  const [autoFillTargetId, setAutoFillTargetId] = useState("");
   const [expenseDate, setExpenseDate] = useState("");
   const [expenseNotes, setExpenseNotes] = useState("");
   const [expenseSplitMethod, setExpenseSplitMethod] = useState<SplitMethod>("equal");
   const [expenseParticipantIds, setExpenseParticipantIds] = useState<string[]>([]);
   const [expensePercentages, setExpensePercentages] = useState<Record<string, number>>({});
+  const [lockedPercentageIds, setLockedPercentageIds] = useState<string[]>([]);
   const [expenseError, setExpenseError] = useState("");
 
   useEffect(() => {
@@ -108,13 +133,19 @@ export default function EventDetail() {
     if (!event) return;
 
     const remainingExpenses = event.expenses
-      .filter((exp) => exp.paidBy !== participantId)
       .map((exp) => ({
         ...exp,
+        paidBy: exp.paidBy === participantId ? "" : exp.paidBy,
+        payments: exp.payments.filter((pay) => pay.participantId !== participantId),
         participantIds: exp.participantIds.filter((pid) => pid !== participantId),
         participants: exp.participants.filter((ep) => ep.id !== participantId),
       }))
-      .filter((exp) => exp.participantIds.length > 0);
+      .filter((exp) => {
+        if (exp.participantIds.length === 0) return false;
+        if (exp.paymentMethod === "single" && !exp.paidBy) return false;
+        if (exp.paymentMethod === "multiple" && exp.payments.length === 0) return false;
+        return true;
+      });
 
     updateEvent({
       ...event,
@@ -133,11 +164,9 @@ export default function EventDetail() {
 
   const equalPercentages = (ids: string[]): Record<string, number> => {
     const map: Record<string, number> = {};
-    if (ids.length === 0) return map;
-    const base = Math.floor((100 / ids.length) * 100) / 100;
-    const remainder = Math.round((100 - base * ids.length) * 100) / 100;
+    const shares = distributeEqually(100, ids.length);
     ids.forEach((id, i) => {
-      map[id] = i === 0 ? Math.round((base + remainder) * 100) / 100 : base;
+      map[id] = shares[i];
     });
     return map;
   };
@@ -146,12 +175,16 @@ export default function EventDetail() {
     const allIds = event?.participants.map((p) => p.id) || [];
     setExpenseDescription("");
     setExpenseAmount("");
+    setExpensePaymentMethod("single");
     setExpensePaidBy(event?.participants[0]?.id || "");
+    setExpensePayments(Object.fromEntries(allIds.map((pid) => [pid, 0])));
+    setAutoFillTargetId(allIds[allIds.length - 1] || "");
     setExpenseDate("");
     setExpenseNotes("");
     setExpenseSplitMethod("equal");
     setExpenseParticipantIds(allIds);
     setExpensePercentages(equalPercentages(allIds));
+    setLockedPercentageIds([]);
     setExpenseError("");
     setEditingExpense(null);
   };
@@ -162,10 +195,18 @@ export default function EventDetail() {
   };
 
   const openEditExpense = (expense: Expense) => {
+    const allIds = event?.participants.map((p) => p.id) || [];
     setEditingExpense(expense);
     setExpenseDescription(expense.description);
     setExpenseAmount(expense.amount.toString());
-    setExpensePaidBy(expense.paidBy);
+    setExpensePaymentMethod(expense.paymentMethod);
+    setExpensePaidBy(expense.paidBy || event?.participants[0]?.id || "");
+    const paymentMap = Object.fromEntries(allIds.map((pid) => [pid, 0]));
+    expense.payments.forEach((p) => {
+      paymentMap[p.participantId] = (paymentMap[p.participantId] || 0) + p.amount;
+    });
+    setExpensePayments(paymentMap);
+    setAutoFillTargetId(allIds[allIds.length - 1] || "");
     setExpenseDate(expense.date || "");
     setExpenseNotes(expense.notes || "");
     setExpenseSplitMethod(expense.splitMethod);
@@ -177,63 +218,118 @@ export default function EventDetail() {
     setExpensePercentages(
       Object.keys(pctMap).length > 0 ? pctMap : equalPercentages(expense.participantIds)
     );
+    setLockedPercentageIds([]);
     setExpenseError("");
     setIsExpenseOpen(true);
   };
 
   const toggleExpenseParticipant = (participantId: string) => {
-    setExpenseParticipantIds((prev) => {
-      const next = prev.includes(participantId)
-        ? prev.filter((id) => id !== participantId)
-        : [...prev, participantId];
-      setExpensePercentages((prevPct) => {
-        const nextPct = { ...prevPct };
-        if (!next.includes(participantId)) {
-          delete nextPct[participantId];
-        } else if (!(participantId in nextPct)) {
-          nextPct[participantId] = 0;
-        }
-        return nextPct;
-      });
-      return next;
-    });
+    const isSelected = expenseParticipantIds.includes(participantId);
+    const nextParticipantIds = isSelected
+      ? expenseParticipantIds.filter((x) => x !== participantId)
+      : [...expenseParticipantIds, participantId];
+    const nextLocked = isSelected
+      ? lockedPercentageIds.filter((x) => x !== participantId)
+      : lockedPercentageIds;
+
+    let nextPercentages = { ...expensePercentages };
+    if (isSelected) {
+      delete nextPercentages[participantId];
+    } else if (!(participantId in nextPercentages)) {
+      nextPercentages[participantId] = 0;
+    }
+    nextPercentages = recomputeRedistribution(nextParticipantIds, nextLocked, nextPercentages);
+
+    setExpenseParticipantIds(nextParticipantIds);
+    setLockedPercentageIds(nextLocked);
+    setExpensePercentages(nextPercentages);
   };
 
   const selectAllParticipants = () => {
     if (!event) return;
     const allIds = event.participants.map((p) => p.id);
-    setExpenseParticipantIds(allIds);
-    setExpensePercentages((prev) => {
-      const next = { ...prev };
-      allIds.forEach((id) => {
-        if (!(id in next)) next[id] = 0;
-      });
-      return next;
+    let nextPercentages = { ...expensePercentages };
+    allIds.forEach((pid) => {
+      if (!(pid in nextPercentages)) nextPercentages[pid] = 0;
     });
+    const nextLocked = lockedPercentageIds.filter((pid) => allIds.includes(pid));
+    nextPercentages = recomputeRedistribution(allIds, nextLocked, nextPercentages);
+
+    setExpenseParticipantIds(allIds);
+    setLockedPercentageIds(nextLocked);
+    setExpensePercentages(nextPercentages);
   };
 
   const clearAllParticipants = () => {
     setExpenseParticipantIds([]);
+    setLockedPercentageIds([]);
     setExpensePercentages({});
   };
 
   const handleAutoDistribute = () => {
-    setExpensePercentages((prev) => ({ ...prev, ...equalPercentages(expenseParticipantIds) }));
+    const shares = distributeEqually(100, expenseParticipantIds.length);
+    const next: Record<string, number> = {};
+    expenseParticipantIds.forEach((pid, i) => {
+      next[pid] = shares[i];
+    });
+    setExpensePercentages(next);
+    setLockedPercentageIds([]);
   };
 
   const handlePercentageChange = (participantId: string, value: string) => {
     const parsed = parseFloat(value);
-    setExpensePercentages((prev) => ({
-      ...prev,
-      [participantId]: value === "" ? 0 : isNaN(parsed) ? 0 : Math.max(0, parsed),
-    }));
+    const val = value === "" ? 0 : isNaN(parsed) ? 0 : Math.max(0, parsed);
+    const nextLocked = lockedPercentageIds.includes(participantId)
+      ? lockedPercentageIds
+      : [...lockedPercentageIds, participantId];
+    const merged = { ...expensePercentages, [participantId]: val };
+    const redistributed = recomputeRedistribution(expenseParticipantIds, nextLocked, merged);
+
+    setLockedPercentageIds(nextLocked);
+    setExpensePercentages(redistributed);
+  };
+
+  const toggleLockPercentage = (participantId: string) => {
+    const isLocked = lockedPercentageIds.includes(participantId);
+    const nextLocked = isLocked
+      ? lockedPercentageIds.filter((id) => id !== participantId)
+      : [...lockedPercentageIds, participantId];
+    const nextPercentages = recomputeRedistribution(expenseParticipantIds, nextLocked, expensePercentages);
+
+    setLockedPercentageIds(nextLocked);
+    setExpensePercentages(nextPercentages);
   };
 
   const percentageTotal = useMemo(() => {
-    return expenseParticipantIds.reduce((sum, id) => sum + (expensePercentages[id] || 0), 0);
+    return expenseParticipantIds.reduce((sum, pid) => sum + (expensePercentages[pid] || 0), 0);
   }, [expenseParticipantIds, expensePercentages]);
 
   const isPercentageValid = Math.abs(percentageTotal - 100) < 0.01;
+
+  // ---- Payments (multiple payers) ----
+
+  const handlePaymentChange = (participantId: string, value: string) => {
+    const parsed = parseFloat(value);
+    const val = value === "" ? 0 : isNaN(parsed) ? 0 : Math.max(0, parsed);
+    setExpensePayments((prev) => ({ ...prev, [participantId]: val }));
+  };
+
+  const handleAutoFillRemaining = () => {
+    if (!autoFillTargetId) return;
+    const parsedAmount = parseFloat(expenseAmount) || 0;
+    const otherSum = Object.entries(expensePayments)
+      .filter(([pid]) => pid !== autoFillTargetId)
+      .reduce((sum, [, amt]) => sum + amt, 0);
+    const remainder = Math.max(0, Math.round((parsedAmount - otherSum) * 100) / 100);
+    setExpensePayments((prev) => ({ ...prev, [autoFillTargetId]: remainder }));
+  };
+
+  const paidTotal = useMemo(() => {
+    if (!event) return 0;
+    return event.participants.reduce((sum, p) => sum + (expensePayments[p.id] || 0), 0);
+  }, [event, expensePayments]);
+
+  const isPaymentValid = Math.abs(paidTotal - (parseFloat(expenseAmount) || 0)) < 0.01;
 
   const livePreviewShares = useMemo(() => {
     const parsedAmount = parseFloat(expenseAmount) || 0;
@@ -241,13 +337,13 @@ export default function EventDetail() {
     if (expenseParticipantIds.length === 0) return shares;
 
     if (expenseSplitMethod === "percentage") {
-      expenseParticipantIds.forEach((id) => {
-        shares[id] = (parsedAmount * (expensePercentages[id] || 0)) / 100;
+      expenseParticipantIds.forEach((pid) => {
+        shares[pid] = (parsedAmount * (expensePercentages[pid] || 0)) / 100;
       });
     } else {
       const share = parsedAmount / expenseParticipantIds.length;
-      expenseParticipantIds.forEach((id) => {
-        shares[id] = share;
+      expenseParticipantIds.forEach((pid) => {
+        shares[pid] = share;
       });
     }
     return shares;
@@ -267,8 +363,12 @@ export default function EventDetail() {
       setExpenseError("Please enter a valid amount.");
       return;
     }
-    if (!expensePaidBy) {
+    if (expensePaymentMethod === "single" && !expensePaidBy) {
       setExpenseError("Please select who paid.");
+      return;
+    }
+    if (expensePaymentMethod === "multiple" && !isPaymentValid) {
+      setExpenseError(`Payments must add up to the total amount. Paid: ${formatCurrency(paidTotal)} / ${formatCurrency(parsedAmount)}`);
       return;
     }
     if (expenseParticipantIds.length === 0) {
@@ -282,8 +382,17 @@ export default function EventDetail() {
 
     const participants: ExpenseParticipant[] =
       expenseSplitMethod === "percentage"
-        ? expenseParticipantIds.map((id) => ({ id, percentage: expensePercentages[id] || 0 }))
-        : expenseParticipantIds.map((id) => ({ id }));
+        ? expenseParticipantIds.map((pid) => ({ id: pid, percentage: expensePercentages[pid] || 0 }))
+        : expenseParticipantIds.map((pid) => ({ id: pid }));
+
+    const payments =
+      expensePaymentMethod === "multiple"
+        ? event.participants
+            .filter((p) => (expensePayments[p.id] || 0) > 0)
+            .map((p) => ({ participantId: p.id, amount: expensePayments[p.id] || 0 }))
+        : [];
+
+    const paidBy = expensePaymentMethod === "single" ? expensePaidBy : "";
 
     if (editingExpense) {
       const updatedExpenses = event.expenses.map((exp) =>
@@ -292,7 +401,9 @@ export default function EventDetail() {
               ...exp,
               description: expenseDescription.trim(),
               amount: parsedAmount,
-              paidBy: expensePaidBy,
+              paymentMethod: expensePaymentMethod,
+              paidBy,
+              payments,
               date: expenseDate || undefined,
               notes: expenseNotes.trim() || undefined,
               splitMethod: expenseSplitMethod,
@@ -307,7 +418,9 @@ export default function EventDetail() {
         id: crypto.randomUUID(),
         description: expenseDescription.trim(),
         amount: parsedAmount,
-        paidBy: expensePaidBy,
+        paymentMethod: expensePaymentMethod,
+        paidBy,
+        payments,
         date: expenseDate || undefined,
         notes: expenseNotes.trim() || undefined,
         splitMethod: expenseSplitMethod,
@@ -474,6 +587,8 @@ export default function EventDetail() {
                     <AnimatePresence>
                       {event.expenses.map((expense) => {
                         const shares = getExpenseShares(expense);
+                        const payments = getExpensePayments(expense);
+                        const payerEntries = Object.entries(payments).filter(([, amt]) => amt > 0);
                         return (
                           <motion.div
                             key={expense.id}
@@ -494,8 +609,24 @@ export default function EventDetail() {
                                       {formatCurrency(expense.amount)}
                                     </span>
                                   </div>
-                                  <p className="text-sm text-muted-foreground mt-1">
-                                    Paid by <span className="font-medium text-foreground">{getParticipantName(expense.paidBy)}</span>
+                                  <p className="text-sm text-muted-foreground mt-1" data-testid={`text-expense-paidby-${expense.id}`}>
+                                    {expense.paymentMethod === "multiple" ? (
+                                      <>
+                                        Paid by{" "}
+                                        <span className="font-medium text-foreground">
+                                          {payerEntries.map(([pid, amt], i) => (
+                                            <span key={pid}>
+                                              {i > 0 && ", "}
+                                              {getParticipantName(pid)} ({formatCurrency(amt)})
+                                            </span>
+                                          ))}
+                                        </span>
+                                      </>
+                                    ) : (
+                                      <>
+                                        Paid by <span className="font-medium text-foreground">{getParticipantName(expense.paidBy)}</span>
+                                      </>
+                                    )}
                                     {expense.date && <span> · {format(new Date(expense.date), "MMM d, yyyy")}</span>}
                                   </p>
                                   <p className="text-sm text-muted-foreground flex items-center gap-1 mt-1" data-testid={`text-expense-split-${expense.id}`}>
@@ -746,21 +877,108 @@ export default function EventDetail() {
                     />
                   </div>
                 </div>
+
                 <div className="space-y-2">
-                  <Label htmlFor="expense-paid-by">Paid By</Label>
-                  <Select value={expensePaidBy} onValueChange={setExpensePaidBy}>
-                    <SelectTrigger id="expense-paid-by" data-testid="select-expense-paid-by">
-                      <SelectValue placeholder="Select who paid" />
+                  <Label htmlFor="expense-payment-method">Payment Method</Label>
+                  <Select
+                    value={expensePaymentMethod}
+                    onValueChange={(val) => setExpensePaymentMethod(val as PaymentMethod)}
+                  >
+                    <SelectTrigger id="expense-payment-method" data-testid="select-payment-method">
+                      <SelectValue placeholder="Select payment method" />
                     </SelectTrigger>
                     <SelectContent>
-                      {event.participants.map((p) => (
-                        <SelectItem key={p.id} value={p.id} data-testid={`option-paid-by-${p.id}`}>
-                          {p.name}
-                        </SelectItem>
-                      ))}
+                      <SelectItem value="single" data-testid="option-payment-single">
+                        Single Payer
+                      </SelectItem>
+                      <SelectItem value="multiple" data-testid="option-payment-multiple">
+                        Multiple Payers
+                      </SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
+
+                {expensePaymentMethod === "single" ? (
+                  <div className="space-y-2">
+                    <Label htmlFor="expense-paid-by">Paid By</Label>
+                    <Select value={expensePaidBy} onValueChange={setExpensePaidBy}>
+                      <SelectTrigger id="expense-paid-by" data-testid="select-expense-paid-by">
+                        <SelectValue placeholder="Select who paid" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {event.participants.map((p) => (
+                          <SelectItem key={p.id} value={p.id} data-testid={`option-paid-by-${p.id}`}>
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between flex-wrap gap-2">
+                      <Label>Payments</Label>
+                      <div className="flex items-center gap-2">
+                        <Select value={autoFillTargetId} onValueChange={setAutoFillTargetId}>
+                          <SelectTrigger className="h-7 w-32 text-xs" data-testid="select-autofill-target">
+                            <SelectValue placeholder="Target" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {event.participants.map((p) => (
+                              <SelectItem key={p.id} value={p.id} data-testid={`option-autofill-target-${p.id}`}>
+                                {p.name}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          className="h-7 px-2 text-xs"
+                          onClick={handleAutoFillRemaining}
+                          disabled={!autoFillTargetId}
+                          data-testid="button-auto-fill-remaining"
+                        >
+                          <Coins className="w-3 h-3 mr-1" />
+                          Auto Fill Remaining
+                        </Button>
+                      </div>
+                    </div>
+
+                    <div className="border rounded-md divide-y max-h-56 overflow-y-auto">
+                      {event.participants.map((p) => (
+                        <div
+                          key={p.id}
+                          className="flex items-center gap-3 p-3"
+                          data-testid={`row-payment-${p.id}`}
+                        >
+                          <Avatar name={p.name} />
+                          <span className="text-sm font-medium flex-1 truncate">{p.name}</span>
+                          <div className="flex items-center gap-1">
+                            <span className="text-sm text-muted-foreground">$</span>
+                            <Input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={expensePayments[p.id] ?? 0}
+                              onChange={(e) => handlePaymentChange(p.id, e.target.value)}
+                              className="w-24 h-8 text-sm"
+                              data-testid={`input-payment-${p.id}`}
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    <p
+                      className={`text-sm font-medium ${isPaymentValid ? "text-emerald-600" : "text-destructive"}`}
+                      data-testid="text-payment-total"
+                    >
+                      Paid: {formatCurrency(paidTotal)} / {formatCurrency(parseFloat(expenseAmount) || 0)}
+                    </p>
+                  </div>
+                )}
 
                 <div className="space-y-2">
                   <Label htmlFor="expense-split-method">Split Method</Label>
@@ -826,6 +1044,7 @@ export default function EventDetail() {
                   <div className="border rounded-md divide-y max-h-64 overflow-y-auto">
                     {event.participants.map((p) => {
                       const checked = expenseParticipantIds.includes(p.id);
+                      const isLocked = lockedPercentageIds.includes(p.id);
                       return (
                         <div
                           key={p.id}
@@ -842,6 +1061,17 @@ export default function EventDetail() {
 
                           {checked && expenseSplitMethod === "percentage" && (
                             <div className="flex items-center gap-1">
+                              <button
+                                type="button"
+                                onClick={() => toggleLockPercentage(p.id)}
+                                className={`h-8 w-8 flex items-center justify-center rounded-md transition-colors ${
+                                  isLocked ? "text-primary bg-primary/10" : "text-muted-foreground hover:bg-secondary/60"
+                                }`}
+                                data-testid={`button-lock-percentage-${p.id}`}
+                                title={isLocked ? "Unlock (auto-calculate)" : "Lock this percentage"}
+                              >
+                                {isLocked ? <Lock className="w-3.5 h-3.5" /> : <Unlock className="w-3.5 h-3.5" />}
+                              </button>
                               <Input
                                 type="number"
                                 min="0"

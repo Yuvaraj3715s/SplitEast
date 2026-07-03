@@ -4,17 +4,25 @@ export interface Participant {
 }
 
 export type SplitMethod = "equal" | "percentage";
+export type PaymentMethod = "single" | "multiple";
 
 export interface ExpenseParticipant {
   id: string;
   percentage?: number;
 }
 
+export interface Payment {
+  participantId: string;
+  amount: number;
+}
+
 export interface Expense {
   id: string;
   description: string;
   amount: number;
+  paymentMethod: PaymentMethod;
   paidBy: string;
+  payments: Payment[];
   date?: string;
   notes?: string;
   splitMethod: SplitMethod;
@@ -38,16 +46,21 @@ function migrateExpense(raw: any, allParticipantIds: string[]): Expense {
     : allParticipantIds;
 
   const splitMethod: SplitMethod = raw.splitMethod === "percentage" ? "percentage" : "equal";
+  const paymentMethod: PaymentMethod = raw.paymentMethod === "multiple" ? "multiple" : "single";
 
   let participants: ExpenseParticipant[] = Array.isArray(raw.participants)
     ? raw.participants
     : participantIds.map((id: string) => ({ id }));
 
+  const payments: Payment[] = Array.isArray(raw.payments) ? raw.payments : [];
+
   return {
     id: raw.id || crypto.randomUUID(),
     description: raw.description || "Expense",
     amount: typeof raw.amount === "number" ? raw.amount : 0,
-    paidBy: raw.paidBy,
+    paymentMethod,
+    paidBy: raw.paidBy || "",
+    payments,
     date: raw.date,
     notes: raw.notes,
     splitMethod,
@@ -72,7 +85,9 @@ function migrateEvent(raw: any): Event {
         id: crypto.randomUUID(),
         description: "Contribution",
         amount: p.amountPaid,
+        paymentMethod: "single",
         paidBy: p.id,
+        payments: [],
         splitMethod: "equal",
         participantIds: allIds,
         participants: allIds.map((id: string) => ({ id })),

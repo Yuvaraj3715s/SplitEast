@@ -14,6 +14,22 @@ export interface Settlement {
   amount: number;
 }
 
+export function getExpensePayments(expense: Expense): Record<string, number> {
+  const map: Record<string, number> = {};
+
+  if (expense.paymentMethod === "multiple") {
+    expense.payments.forEach((p) => {
+      map[p.participantId] = (map[p.participantId] || 0) + p.amount;
+    });
+    return map;
+  }
+
+  if (expense.paidBy) {
+    map[expense.paidBy] = expense.amount;
+  }
+  return map;
+}
+
 export function getExpenseShares(expense: Expense): Record<string, number> {
   const shares: Record<string, number> = {};
   const participantIds = expense.participantIds;
@@ -45,9 +61,12 @@ export function calculateBalances(participants: Participant[], expenses: Expense
   });
 
   expenses.forEach((expense) => {
-    if (paidMap.has(expense.paidBy)) {
-      paidMap.set(expense.paidBy, (paidMap.get(expense.paidBy) || 0) + expense.amount);
-    }
+    const payments = getExpensePayments(expense);
+    Object.entries(payments).forEach(([id, amount]) => {
+      if (paidMap.has(id)) {
+        paidMap.set(id, (paidMap.get(id) || 0) + amount);
+      }
+    });
 
     const shares = getExpenseShares(expense);
     Object.entries(shares).forEach(([id, amount]) => {
@@ -107,6 +126,17 @@ export function calculateSettlements(balances: ParticipantBalance[]): Settlement
   }
 
   return settlements;
+}
+
+export function distributeEqually(total: number, count: number): number[] {
+  if (count <= 0) return [];
+  const rounded = Math.round(total * 100) / 100;
+  const base = Math.floor((rounded / count) * 100) / 100;
+  const results = new Array(count).fill(base);
+  const distributed = Math.round(base * count * 100) / 100;
+  const remainder = Math.round((rounded - distributed) * 100) / 100;
+  results[results.length - 1] = Math.round((results[results.length - 1] + remainder) * 100) / 100;
+  return results;
 }
 
 export function formatCurrency(amount: number): string {
