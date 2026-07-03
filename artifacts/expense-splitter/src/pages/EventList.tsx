@@ -29,7 +29,8 @@ export default function EventList() {
       id: crypto.randomUUID(),
       name: newEventName.trim(),
       date: newEventDate || new Date().toISOString().split("T")[0],
-      participants: []
+      participants: [],
+      expenses: []
     };
 
     const updatedEvents = [newEvent, ...events];
@@ -118,7 +119,7 @@ export default function EventList() {
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             <AnimatePresence>
               {events.map(event => {
-                const totalSpent = event.participants.reduce((sum, p) => sum + p.amountPaid, 0);
+                const totalSpent = event.expenses.reduce((sum, exp) => sum + exp.amount, 0);
                 const hasBalances = totalSpent > 0;
                 
                 return (

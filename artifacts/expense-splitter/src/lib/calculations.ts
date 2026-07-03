@@ -1,7 +1,10 @@
-import { Participant } from "./storage";
+import { Participant, Expense } from "./storage";
 
-export interface ParticipantBalance extends Participant {
-  fairShare: number;
+export interface ParticipantBalance {
+  id: string;
+  name: string;
+  totalPaid: number;
+  totalOwed: number;
   balance: number;
 }
 
@@ -11,25 +14,55 @@ export interface Settlement {
   amount: number;
 }
 
-export function calculateBalances(participants: Participant[]): ParticipantBalance[] {
-  if (participants.length === 0) return [];
-  
-  const totalPaid = participants.reduce((sum, p) => sum + p.amountPaid, 0);
-  const fairShare = totalPaid / participants.length;
+export function calculateBalances(participants: Participant[], expenses: Expense[]): ParticipantBalance[] {
+  const paidMap = new Map<string, number>();
+  const owedMap = new Map<string, number>();
 
-  return participants.map(p => ({
-    ...p,
-    fairShare,
-    balance: p.amountPaid - fairShare
-  }));
+  participants.forEach((p) => {
+    paidMap.set(p.id, 0);
+    owedMap.set(p.id, 0);
+  });
+
+  expenses.forEach((expense) => {
+    if (paidMap.has(expense.paidBy)) {
+      paidMap.set(expense.paidBy, (paidMap.get(expense.paidBy) || 0) + expense.amount);
+    }
+
+    const validParticipantIds = expense.participantIds.filter((id) => owedMap.has(id));
+    const splitCount = validParticipantIds.length;
+    if (splitCount === 0) return;
+
+    const share = expense.amount / splitCount;
+    validParticipantIds.forEach((id) => {
+      owedMap.set(id, (owedMap.get(id) || 0) + share);
+    });
+  });
+
+  return participants.map((p) => {
+    const totalPaid = paidMap.get(p.id) || 0;
+    const totalOwed = owedMap.get(p.id) || 0;
+    return {
+      id: p.id,
+      name: p.name,
+      totalPaid,
+      totalOwed,
+      balance: totalPaid - totalOwed,
+    };
+  });
 }
 
 export function calculateSettlements(balances: ParticipantBalance[]): Settlement[] {
-  const debtors = balances.filter(b => b.balance < -0.01).map(b => ({ ...b, balance: Math.abs(b.balance) })).sort((a, b) => b.balance - a.balance);
-  const creditors = balances.filter(b => b.balance > 0.01).sort((a, b) => b.balance - a.balance);
+  const debtors = balances
+    .filter((b) => b.balance < -0.01)
+    .map((b) => ({ ...b, balance: Math.abs(b.balance) }))
+    .sort((a, b) => b.balance - a.balance);
+  const creditors = balances
+    .filter((b) => b.balance > 0.01)
+    .map((b) => ({ ...b }))
+    .sort((a, b) => b.balance - a.balance);
 
   const settlements: Settlement[] = [];
-  
+
   let d = 0;
   let c = 0;
 
@@ -38,12 +71,12 @@ export function calculateSettlements(balances: ParticipantBalance[]): Settlement
     const creditor = creditors[c];
 
     const amount = Math.min(debtor.balance, creditor.balance);
-    
+
     if (amount > 0.01) {
       settlements.push({
         from: debtor.name,
         to: creditor.name,
-        amount
+        amount,
       });
     }
 
@@ -58,5 +91,5 @@ export function calculateSettlements(balances: ParticipantBalance[]): Settlement
 }
 
 export function formatCurrency(amount: number): string {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(amount);
+  return new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(amount);
 }
