@@ -30,7 +30,8 @@ export default function EventList() {
       name: newEventName.trim(),
       date: newEventDate || new Date().toISOString().split("T")[0],
       participants: [],
-      expenses: []
+      expenses: [],
+      settlements: []
     };
 
     const updatedEvents = [newEvent, ...events];

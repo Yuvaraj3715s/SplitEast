@@ -1,0 +1,258 @@
+Modify my existing bill-splitting website by adding a complete Settlement Tracking system. Do NOT redesign the application or remove any existing functionality.
+
+# Settlement Tracking
+
+After calculating everyone's balances, the application generates settlement suggestions (for example: Alice pays Bob ₹500).
+
+I want users to be able to mark these settlements as completed.
+
+## Settlement List
+
+Display all suggested settlements like this:
+
+Pending
+
+⭕ Alice → Bob ₹500
+
+⭕ Charlie → David ₹250
+
+Each settlement should have:
+
+- Amount
+- Payer
+- Receiver
+- Status (Pending / Paid)
+- Date
+- Notes (optional)
+
+--------------------------------------------------
+
+## Mark as Paid
+
+Each settlement should have a "Mark as Paid" button.
+
+When clicked:
+
+- Change status from Pending to Paid.
+- Save the payment permanently.
+- Record the payment date and time.
+- Remove or visually separate it from pending settlements.
+- Recalculate everyone's remaining balances immediately.
+
+Example:
+
+Before:
+
+Alice owes Bob ₹500
+
+After clicking "Mark as Paid":
+
+Alice owes Bob ₹0
+
+Settlement History:
+
+✓ Alice paid Bob ₹500
+
+--------------------------------------------------
+
+## Custom Settlement
+
+Users should also be able to manually record a payment even if it wasn't one of the suggested settlements.
+
+Example:
+
+"Record Payment"
+
+Paid By:
+Alice
+
+Received By:
+Bob
+
+Amount:
+₹300
+
+Date:
+Today
+
+Notes:
+Cash
+
+After saving:
+
+Reduce Alice's debt by ₹300.
+
+Reduce Bob's credit by ₹300.
+
+Update balances immediately.
+
+--------------------------------------------------
+
+## Partial Payments
+
+Support partial settlements.
+
+Example:
+
+Alice owes Bob ₹1000.
+
+Alice pays ₹300.
+
+Result:
+
+Remaining amount:
+
+Alice still owes Bob ₹700.
+
+Settlement History:
+
+✓ Alice paid Bob ₹300
+
+Pending:
+
+Alice owes Bob ₹700.
+
+--------------------------------------------------
+
+## Undo Settlement
+
+Users should be able to undo a recorded payment.
+
+If a settlement is deleted or undone:
+
+- Restore balances.
+- Restore pending settlement.
+- Update calculations automatically.
+
+--------------------------------------------------
+
+## Settlement History
+
+Create a Settlement History section.
+
+For every payment store:
+
+- Paid By
+- Received By
+- Amount
+- Date
+- Time
+- Notes
+- Status
+
+Example:
+
+✓ Alice paid Bob ₹500
+
+July 5, 2026
+
+Cash
+
+--------------------------------------------------
+
+## Filters
+
+Allow filtering by:
+
+- Pending
+- Paid
+- All
+
+Also filter by:
+
+- Person
+- Date
+- Group/Event
+
+--------------------------------------------------
+
+## Event Completion
+
+When every settlement has been completed:
+
+Show:
+
+✅ All expenses settled.
+
+Everyone is even.
+
+--------------------------------------------------
+
+## Data Model
+
+Each settlement should store:
+
+{
+  "id": "unique-id",
+  "groupId": "...",
+  "payer": "alice",
+  "receiver": "bob",
+  "amount": 500,
+  "status": "paid",
+  "date": "...",
+  "notes": "Cash payment"
+}
+
+--------------------------------------------------
+
+## UI
+
+Show settlement cards like:
+
+Alice
+
+↓
+
+₹500
+
+↓
+
+Bob
+
+Status:
+
+🟢 Paid
+
+or
+
+🟠 Pending
+
+Include buttons:
+
+✔ Mark as Paid
+
+✏ Edit
+
+↩ Undo
+
+🗑 Delete
+
+--------------------------------------------------
+
+## Recalculation Rules
+
+Whenever a settlement is:
+
+- Added
+- Edited
+- Deleted
+- Marked Paid
+- Undone
+
+Automatically recalculate:
+
+- Remaining balances
+- Pending settlements
+- Settlement history
+- Event summary
+
+without refreshing the page.
+
+--------------------------------------------------
+
+## General Requirements
+
+- Preserve the current UI and project structure.
+- Do not remove any existing features.
+- Integrate this seamlessly with participant selection, multiple payers, equal split, percentage split, and all existing settlement calculations.
+- Keep the application responsive, accurate, and ensure every recorded payment immediately updates everyone's balances.

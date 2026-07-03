@@ -8,9 +8,9 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, UserPlus, Trash2, Edit2, Receipt, ArrowRight, Users, Plus, ListChecks, Wand2, Lock, Unlock, Coins } from "lucide-react";
-import { getEvents, saveEvents, Event, Participant, Expense, SplitMethod, PaymentMethod, ExpenseParticipant } from "@/lib/storage";
-import { calculateBalances, calculateSettlements, getExpenseShares, getExpensePayments, distributeEqually, formatCurrency } from "@/lib/calculations";
+import { ArrowLeft, UserPlus, Trash2, Edit2, Receipt, ArrowRight, Users, Plus, ListChecks, Wand2, Lock, Unlock, Coins, CheckCircle2, Circle, Undo2, PlusCircle, Filter, PartyPopper } from "lucide-react";
+import { getEvents, saveEvents, Event, Participant, Expense, SplitMethod, PaymentMethod, ExpenseParticipant, SettlementRecord } from "@/lib/storage";
+import { calculateBalances, calculateSettlements, getExpenseShares, getExpensePayments, applySettlements, distributeEqually, formatCurrency, Settlement } from "@/lib/calculations";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
 
@@ -73,6 +73,19 @@ export default function EventDetail() {
   const [expensePercentages, setExpensePercentages] = useState<Record<string, number>>({});
   const [lockedPercentageIds, setLockedPercentageIds] = useState<string[]>([]);
   const [expenseError, setExpenseError] = useState("");
+
+  const [settlementFilterStatus, setSettlementFilterStatus] = useState<"all" | "pending" | "paid">("all");
+  const [settlementFilterPerson, setSettlementFilterPerson] = useState<string>("all");
+  const [settlementFilterDate, setSettlementFilterDate] = useState<string>("");
+
+  const [isSettlementFormOpen, setIsSettlementFormOpen] = useState(false);
+  const [editingSettlementId, setEditingSettlementId] = useState<string | null>(null);
+  const [settlementPayerId, setSettlementPayerId] = useState("");
+  const [settlementReceiverId, setSettlementReceiverId] = useState("");
+  const [settlementAmount, setSettlementAmount] = useState("");
+  const [settlementDate, setSettlementDate] = useState("");
+  const [settlementNotes, setSettlementNotes] = useState("");
+  const [settlementError, setSettlementError] = useState("");
 
   useEffect(() => {
     const events = getEvents();
@@ -445,14 +458,138 @@ export default function EventDetail() {
   const getParticipantName = (participantId: string) =>
     event?.participants.find((p) => p.id === participantId)?.name || "Unknown";
 
-  const balances = useMemo(() => {
+  // ---- Settlement Tracking ----
+
+  const resetSettlementForm = () => {
+    const firstId = event?.participants[0]?.id || "";
+    const secondId = event?.participants[1]?.id || firstId;
+    setSettlementPayerId(firstId);
+    setSettlementReceiverId(secondId);
+    setSettlementAmount("");
+    setSettlementDate(new Date().toISOString().slice(0, 16));
+    setSettlementNotes("");
+    setSettlementError("");
+    setEditingSettlementId(null);
+  };
+
+  const openRecordPayment = () => {
+    resetSettlementForm();
+    setIsSettlementFormOpen(true);
+  };
+
+  const openMarkAsPaid = (s: Settlement) => {
+    setEditingSettlementId(null);
+    setSettlementPayerId(s.fromId);
+    setSettlementReceiverId(s.toId);
+    setSettlementAmount(s.amount.toFixed(2));
+    setSettlementDate(new Date().toISOString().slice(0, 16));
+    setSettlementNotes("");
+    setSettlementError("");
+    setIsSettlementFormOpen(true);
+  };
+
+  const openEditSettlement = (record: SettlementRecord) => {
+    setEditingSettlementId(record.id);
+    setSettlementPayerId(record.payer);
+    setSettlementReceiverId(record.receiver);
+    setSettlementAmount(record.amount.toString());
+    setSettlementDate(record.date.slice(0, 16));
+    setSettlementNotes(record.notes || "");
+    setSettlementError("");
+    setIsSettlementFormOpen(true);
+  };
+
+  const handleSaveSettlement = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!event) return;
+
+    const parsedAmount = parseFloat(settlementAmount);
+
+    if (!settlementPayerId || !settlementReceiverId) {
+      setSettlementError("Select both a payer and a receiver.");
+      return;
+    }
+    if (settlementPayerId === settlementReceiverId) {
+      setSettlementError("Payer and receiver must be different people.");
+      return;
+    }
+    if (isNaN(parsedAmount) || parsedAmount <= 0) {
+      setSettlementError("Please enter a valid amount.");
+      return;
+    }
+
+    const isoDate = settlementDate ? new Date(settlementDate).toISOString() : new Date().toISOString();
+
+    if (editingSettlementId) {
+      const updated = event.settlements.map((s) =>
+        s.id === editingSettlementId
+          ? {
+              ...s,
+              payer: settlementPayerId,
+              receiver: settlementReceiverId,
+              amount: parsedAmount,
+              date: isoDate,
+              notes: settlementNotes.trim() || undefined,
+            }
+          : s
+      );
+      updateEvent({ ...event, settlements: updated });
+    } else {
+      const newRecord: SettlementRecord = {
+        id: crypto.randomUUID(),
+        payer: settlementPayerId,
+        receiver: settlementReceiverId,
+        amount: parsedAmount,
+        date: isoDate,
+        notes: settlementNotes.trim() || undefined,
+        status: "paid",
+      };
+      updateEvent({ ...event, settlements: [...event.settlements, newRecord] });
+    }
+
+    setIsSettlementFormOpen(false);
+    resetSettlementForm();
+  };
+
+  const handleUndoSettlement = (settlementId: string) => {
+    if (!event) return;
+    updateEvent({
+      ...event,
+      settlements: event.settlements.filter((s) => s.id !== settlementId),
+    });
+  };
+
+  const rawBalances = useMemo(() => {
     if (!event) return [];
     return calculateBalances(event.participants, event.expenses);
   }, [event]);
 
+  const balances = useMemo(() => {
+    if (!event) return rawBalances;
+    return applySettlements(rawBalances, event.settlements);
+  }, [rawBalances, event]);
+
   const settlements = useMemo(() => {
     return calculateSettlements(balances);
   }, [balances]);
+
+  const filteredPendingSettlements = useMemo(() => {
+    if (settlementFilterStatus === "paid") return [];
+    return settlements.filter(
+      (s) => settlementFilterPerson === "all" || s.fromId === settlementFilterPerson || s.toId === settlementFilterPerson
+    );
+  }, [settlements, settlementFilterStatus, settlementFilterPerson]);
+
+  const filteredHistory = useMemo(() => {
+    if (!event) return [];
+    if (settlementFilterStatus === "pending") return [];
+    return event.settlements
+      .filter(
+        (s) => settlementFilterPerson === "all" || s.payer === settlementFilterPerson || s.receiver === settlementFilterPerson
+      )
+      .filter((s) => !settlementFilterDate || s.date.slice(0, 10) === settlementFilterDate)
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  }, [event, settlementFilterStatus, settlementFilterPerson, settlementFilterDate]);
 
   if (!event) {
     return (
@@ -768,37 +905,259 @@ export default function EventDetail() {
             </>
           )}
 
-          {event.participants.length > 1 && settlements.length > 0 && (
-            <section className="mt-8">
-              <h2 className="text-xl font-semibold mb-4 text-foreground flex items-center gap-2">
-                <ListChecks className="w-5 h-5 text-muted-foreground" />
-                How to settle up
-              </h2>
-              <Card className="bg-card shadow-sm border-border">
-                <div className="divide-y">
-                  {settlements.map((s, i) => (
-                    <div key={i} className="p-4 sm:p-5 flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="font-medium text-foreground">{s.from}</div>
-                        <ArrowRight className="w-4 h-4 text-muted-foreground" />
-                        <div className="font-medium text-foreground">{s.to}</div>
-                      </div>
-                      <div className="font-bold text-lg text-emerald-600 dark:text-emerald-500">
-                        {formatCurrency(s.amount)}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            </section>
-          )}
-
           {event.participants.length > 1 && settlements.length === 0 && totalSpent > 0 && (
-            <div className="mt-8 p-6 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl text-center border border-emerald-100 dark:border-emerald-500/20">
-              <p className="text-emerald-700 dark:text-emerald-400 font-medium">All settled up! Everyone has paid their fair share.</p>
+            <div className="mt-8 p-6 bg-emerald-50 dark:bg-emerald-500/10 rounded-xl text-center border border-emerald-100 dark:border-emerald-500/20 flex flex-col items-center gap-2">
+              <PartyPopper className="w-6 h-6 text-emerald-600 dark:text-emerald-400" />
+              <p className="text-emerald-700 dark:text-emerald-400 font-medium">
+                All settled up! Everyone has paid their fair share.
+              </p>
             </div>
           )}
+
+          {event.participants.length > 1 && (totalSpent > 0 || event.settlements.length > 0) && (
+            <section className="mt-8">
+              <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                <h2 className="text-xl font-semibold text-foreground flex items-center gap-2">
+                  <ListChecks className="w-5 h-5 text-muted-foreground" />
+                  Settlements
+                </h2>
+                <Button size="sm" variant="outline" onClick={openRecordPayment} data-testid="button-record-payment">
+                  <PlusCircle className="w-4 h-4 mr-1.5" />
+                  Record Payment
+                </Button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 mb-4 text-sm">
+                <Filter className="w-4 h-4 text-muted-foreground shrink-0" />
+                <Select value={settlementFilterStatus} onValueChange={(v) => setSettlementFilterStatus(v as any)}>
+                  <SelectTrigger className="w-[130px] h-8" data-testid="select-filter-status">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All statuses</SelectItem>
+                    <SelectItem value="pending">Pending only</SelectItem>
+                    <SelectItem value="paid">Paid only</SelectItem>
+                  </SelectContent>
+                </Select>
+                <Select value={settlementFilterPerson} onValueChange={setSettlementFilterPerson}>
+                  <SelectTrigger className="w-[150px] h-8" data-testid="select-filter-person">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Everyone</SelectItem>
+                    {event.participants.map((p) => (
+                      <SelectItem key={p.id} value={p.id}>
+                        {p.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Input
+                  type="date"
+                  value={settlementFilterDate}
+                  onChange={(e) => setSettlementFilterDate(e.target.value)}
+                  className="w-[150px] h-8"
+                  data-testid="input-filter-date"
+                />
+                {(settlementFilterStatus !== "all" || settlementFilterPerson !== "all" || settlementFilterDate) && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 text-muted-foreground"
+                    onClick={() => {
+                      setSettlementFilterStatus("all");
+                      setSettlementFilterPerson("all");
+                      setSettlementFilterDate("");
+                    }}
+                  >
+                    Clear
+                  </Button>
+                )}
+              </div>
+
+              {filteredPendingSettlements.length > 0 && (
+                <div className="mb-4">
+                  <h3 className="text-sm font-medium text-muted-foreground mb-2">Pending</h3>
+                  <Card className="bg-card shadow-sm border-border">
+                    <div className="divide-y">
+                      {filteredPendingSettlements.map((s, i) => (
+                        <div key={i} className="p-4 sm:p-5 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <Circle className="w-4 h-4 text-amber-500 shrink-0" />
+                            <div className="font-medium text-foreground">{s.from}</div>
+                            <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                            <div className="font-medium text-foreground">{s.to}</div>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="font-bold text-lg text-emerald-600 dark:text-emerald-500">
+                              {formatCurrency(s.amount)}
+                            </div>
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => openMarkAsPaid(s)}
+                              data-testid={`button-mark-paid-${i}`}
+                            >
+                              <CheckCircle2 className="w-4 h-4 mr-1.5" />
+                              Mark Paid
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                </div>
+              )}
+
+              {filteredHistory.length > 0 && (
+                <div>
+                  <h3 className="text-sm font-medium text-muted-foreground mb-2">Settlement History</h3>
+                  <Card className="bg-card shadow-sm border-border">
+                    <div className="divide-y">
+                      {filteredHistory.map((s) => (
+                        <div key={s.id} className="p-4 sm:p-5 flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <CheckCircle2 className="w-4 h-4 text-emerald-500 shrink-0" />
+                            <div className="font-medium text-foreground">{getParticipantName(s.payer)}</div>
+                            <ArrowRight className="w-4 h-4 text-muted-foreground" />
+                            <div className="font-medium text-foreground">{getParticipantName(s.receiver)}</div>
+                            <span className="text-xs text-muted-foreground">
+                              {format(new Date(s.date), "MMM d, yyyy")}
+                            </span>
+                            {s.notes && <span className="text-xs text-muted-foreground italic">"{s.notes}"</span>}
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="font-bold text-foreground">{formatCurrency(s.amount)}</div>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                              onClick={() => openEditSettlement(s)}
+                              data-testid={`button-edit-settlement-${s.id}`}
+                            >
+                              <Edit2 className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                              onClick={() => handleUndoSettlement(s.id)}
+                              data-testid={`button-undo-settlement-${s.id}`}
+                            >
+                              <Undo2 className="w-3.5 h-3.5" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                              onClick={() => handleUndoSettlement(s.id)}
+                              data-testid={`button-delete-settlement-${s.id}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </Button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </Card>
+                </div>
+              )}
+
+              {filteredPendingSettlements.length === 0 && filteredHistory.length === 0 && (
+                <p className="text-sm text-muted-foreground text-center py-6">
+                  No settlements match the current filters.
+                </p>
+              )}
+            </section>
+          )}
         </div>
+
+        {/* Record Payment / Mark as Paid Dialog */}
+        <Dialog open={isSettlementFormOpen} onOpenChange={setIsSettlementFormOpen}>
+          <DialogContent>
+            <form onSubmit={handleSaveSettlement}>
+              <DialogHeader>
+                <DialogTitle>{editingSettlementId ? "Edit Settlement" : "Record Payment"}</DialogTitle>
+              </DialogHeader>
+              <div className="space-y-4 py-4">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>From (payer)</Label>
+                    <Select value={settlementPayerId} onValueChange={setSettlementPayerId}>
+                      <SelectTrigger data-testid="select-settlement-payer">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {event.participants.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>To (receiver)</Label>
+                    <Select value={settlementReceiverId} onValueChange={setSettlementReceiverId}>
+                      <SelectTrigger data-testid="select-settlement-receiver">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {event.participants.map((p) => (
+                          <SelectItem key={p.id} value={p.id}>
+                            {p.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="settlement-amount">Amount</Label>
+                  <Input
+                    id="settlement-amount"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={settlementAmount}
+                    onChange={(e) => setSettlementAmount(e.target.value)}
+                    placeholder="0.00"
+                    data-testid="input-settlement-amount"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="settlement-date">Date</Label>
+                  <Input
+                    id="settlement-date"
+                    type="datetime-local"
+                    value={settlementDate}
+                    onChange={(e) => setSettlementDate(e.target.value)}
+                    data-testid="input-settlement-date"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="settlement-notes">Notes (optional)</Label>
+                  <Textarea
+                    id="settlement-notes"
+                    value={settlementNotes}
+                    onChange={(e) => setSettlementNotes(e.target.value)}
+                    placeholder="e.g. Paid via Venmo"
+                    data-testid="input-settlement-notes"
+                  />
+                </div>
+                {settlementError && <p className="text-sm text-destructive">{settlementError}</p>}
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setIsSettlementFormOpen(false)}>
+                  Cancel
+                </Button>
+                <Button type="submit" data-testid="button-save-settlement">
+                  {editingSettlementId ? "Save Changes" : "Record Payment"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </DialogContent>
+        </Dialog>
 
         {/* Edit Person Dialog */}
         <Dialog open={isEditPersonOpen} onOpenChange={setIsEditPersonOpen}>

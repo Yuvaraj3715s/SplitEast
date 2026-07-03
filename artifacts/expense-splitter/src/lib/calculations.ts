@@ -1,4 +1,4 @@
-import { Participant, Expense } from "./storage";
+import { Participant, Expense, SettlementRecord } from "./storage";
 
 export interface ParticipantBalance {
   id: string;
@@ -9,6 +9,8 @@ export interface ParticipantBalance {
 }
 
 export interface Settlement {
+  fromId: string;
+  toId: string;
   from: string;
   to: string;
   amount: number;
@@ -112,6 +114,8 @@ export function calculateSettlements(balances: ParticipantBalance[]): Settlement
 
     if (amount > 0.01) {
       settlements.push({
+        fromId: debtor.id,
+        toId: creditor.id,
         from: debtor.name,
         to: creditor.name,
         amount,
@@ -126,6 +130,28 @@ export function calculateSettlements(balances: ParticipantBalance[]): Settlement
   }
 
   return settlements;
+}
+
+export function applySettlements(
+  balances: ParticipantBalance[],
+  settlements: SettlementRecord[]
+): ParticipantBalance[] {
+  const adjustments = new Map<string, number>();
+  balances.forEach((b) => adjustments.set(b.id, 0));
+
+  settlements.forEach((s) => {
+    if (adjustments.has(s.payer)) {
+      adjustments.set(s.payer, (adjustments.get(s.payer) || 0) + s.amount);
+    }
+    if (adjustments.has(s.receiver)) {
+      adjustments.set(s.receiver, (adjustments.get(s.receiver) || 0) - s.amount);
+    }
+  });
+
+  return balances.map((b) => ({
+    ...b,
+    balance: Math.round((b.balance + (adjustments.get(b.id) || 0)) * 100) / 100,
+  }));
 }
 
 export function distributeEqually(total: number, count: number): number[] {

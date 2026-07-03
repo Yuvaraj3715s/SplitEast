@@ -1,0 +1,1 @@
+- [SplitEasy settlement tracking design](splitease-settlements.md) — settlements are a derived-net-balance layer on top of raw expense balances, not a mutation of expenses.

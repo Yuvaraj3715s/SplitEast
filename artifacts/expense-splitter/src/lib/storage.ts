@@ -30,15 +30,41 @@ export interface Expense {
   participants: ExpenseParticipant[];
 }
 
+export type SettlementStatus = "paid";
+
+export interface SettlementRecord {
+  id: string;
+  payer: string;
+  receiver: string;
+  amount: number;
+  date: string;
+  notes?: string;
+  status: SettlementStatus;
+}
+
 export interface Event {
   id: string;
   name: string;
   date: string;
   participants: Participant[];
   expenses: Expense[];
+  settlements: SettlementRecord[];
 }
 
 const STORAGE_KEY = "expense-splitter-events";
+
+function migrateSettlement(raw: any): SettlementRecord | null {
+  if (!raw || typeof raw.amount !== "number" || !raw.payer || !raw.receiver) return null;
+  return {
+    id: raw.id || crypto.randomUUID(),
+    payer: raw.payer,
+    receiver: raw.receiver,
+    amount: raw.amount,
+    date: raw.date || new Date().toISOString(),
+    notes: raw.notes,
+    status: "paid",
+  };
+}
 
 function migrateExpense(raw: any, allParticipantIds: string[]): Expense {
   const participantIds: string[] = Array.isArray(raw.participantIds)
@@ -96,12 +122,17 @@ function migrateEvent(raw: any): Event {
 
   const expenses: Expense[] = rawExpenses.map((exp) => migrateExpense(exp, allIds));
 
+  const settlements: SettlementRecord[] = Array.isArray(raw.settlements)
+    ? raw.settlements.map(migrateSettlement).filter((s: SettlementRecord | null): s is SettlementRecord => s !== null)
+    : [];
+
   return {
     id: raw.id,
     name: raw.name,
     date: raw.date,
     participants,
     expenses,
+    settlements,
   };
 }
 
