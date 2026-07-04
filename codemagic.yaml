@@ -1,0 +1,32 @@
+workflows:
+  ios-build:
+    name: Build iOS
+
+    instance_type: mac_mini_m2
+
+    environment:
+      node: 22
+      xcode: latest
+
+    scripts:
+      - npm install -g pnpm
+
+      - pnpm install
+
+      - cd artifacts/expense-splitter
+      - export PORT=4173
+      - export BASE_PATH=/
+      - pnpm build
+
+      - npx cap sync ios
+
+      - cd ios
+      - xcodebuild \
+          -workspace App/App.xcworkspace \
+          -scheme App \
+          -configuration Debug \
+          -sdk iphoneos \
+          CODE_SIGNING_ALLOWED=NO
+
+    artifacts:
+      - artifacts/expense-splitter/ios/build/**/*.app
