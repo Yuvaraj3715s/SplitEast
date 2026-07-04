@@ -6,10 +6,11 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { format } from "date-fns";
-import { Plus, Trash2, Calendar, Users, Wallet } from "lucide-react";
+import { Plus, Trash2, Calendar, Users, Wallet, Sparkles } from "lucide-react";
 import { getEvents, saveEvents, Event } from "@/lib/storage";
 import { formatCurrency } from "@/lib/calculations";
 import { motion, AnimatePresence } from "framer-motion";
+import { CountUp } from "@/components/ui/count-up";
 
 export default function EventList() {
   const [events, setEvents] = useState<Event[]>([]);
@@ -60,7 +61,7 @@ export default function EventList() {
           </div>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button data-testid="button-new-event" size="lg" className="rounded-full shadow-xl shadow-primary/20 transition-all hover:scale-105 active:scale-95 bg-foreground text-background hover:bg-foreground/90">
+              <Button data-testid="button-new-event" size="lg" className="rounded-full bg-gradient-primary px-6">
                 <Plus className="w-5 h-5 mr-2" />
                 New Event
               </Button>
@@ -96,7 +97,7 @@ export default function EventList() {
                   </div>
                 </div>
                 <DialogFooter className="px-2 pb-2">
-                  <Button type="submit" disabled={!newEventName.trim()} data-testid="button-save-event" size="lg" className="w-full rounded-2xl h-14 text-lg font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20">
+                  <Button type="submit" disabled={!newEventName.trim()} data-testid="button-save-event" size="lg" className="w-full rounded-2xl h-14 text-lg font-bold bg-gradient-primary">
                     Create Event
                   </Button>
                 </DialogFooter>
@@ -106,18 +107,27 @@ export default function EventList() {
         </header>
 
         {events.length === 0 ? (
-          <div className="text-center py-32 glass-card rounded-[32px] flex flex-col items-center justify-center">
-            <div className="bg-primary/10 w-24 h-24 rounded-full flex items-center justify-center mb-8 shadow-inner">
-              <Wallet className="w-12 h-12 text-primary" />
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="text-center py-32 glass-card rounded-[40px] flex flex-col items-center justify-center relative overflow-hidden"
+          >
+            <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 pointer-events-none"></div>
+            <div className="relative">
+              <div className="absolute -inset-4 bg-gradient-to-r from-indigo-500/20 to-purple-500/20 blur-2xl rounded-full"></div>
+              <div className="bg-gradient-to-br from-indigo-500 to-purple-600 w-28 h-28 rounded-full flex items-center justify-center mb-8 shadow-xl shadow-purple-500/30 relative z-10 border-4 border-white/20 dark:border-white/5">
+                <Wallet className="w-14 h-14 text-white" />
+              </div>
             </div>
-            <h3 className="text-3xl font-bold tracking-tight text-foreground mb-4">No events yet</h3>
-            <p className="text-lg text-muted-foreground max-w-sm mx-auto mb-10">
+            <h3 className="text-4xl font-black tracking-tighter text-foreground mb-4 relative z-10">No events yet</h3>
+            <p className="text-xl text-muted-foreground max-w-sm mx-auto mb-10 relative z-10">
               Create an event to start tracking shared expenses with your friends.
             </p>
-            <Button onClick={() => setIsDialogOpen(true)} size="lg" className="rounded-full shadow-lg shadow-primary/20 h-14 px-8 text-lg font-semibold">
+            <Button onClick={() => setIsDialogOpen(true)} size="lg" className="rounded-full h-14 px-8 text-lg font-semibold bg-gradient-primary relative z-10">
+              <Sparkles className="w-5 h-5 mr-2" />
               Create your first event
             </Button>
-          </div>
+          </motion.div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
             <AnimatePresence>
@@ -166,11 +176,9 @@ export default function EventList() {
                         <CardContent className="pb-6 flex-grow relative z-10 px-6">
                           <div className="flex items-end justify-between">
                             <div>
-                              <p className="text-sm font-semibold uppercase tracking-wider text-muted-foreground/70 mb-1">Total Spent</p>
+                              <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground/80 mb-1">Total Spent</p>
                               <div className="flex items-baseline gap-1">
-                                <span className="text-3xl font-black tracking-tighter text-foreground">
-                                  {formatCurrency(totalSpent)}
-                                </span>
+                                <CountUp className="text-4xl font-black tracking-tighter text-foreground" value={totalSpent} />
                               </div>
                             </div>
                             <div className="flex items-center bg-background/50 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/20 dark:border-white/5">

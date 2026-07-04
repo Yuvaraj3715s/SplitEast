@@ -13,6 +13,7 @@ import { getEvents, saveEvents, Event, Participant, Expense, SplitMethod, Paymen
 import { calculateBalances, calculateSettlements, getExpenseShares, getExpensePayments, applySettlements, distributeEqually, formatCurrency, Settlement } from "@/lib/calculations";
 import { motion, AnimatePresence } from "framer-motion";
 import { format } from "date-fns";
+import { CountUp } from "@/components/ui/count-up";
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -657,7 +658,7 @@ export default function EventDetail() {
                     </div>
                   </div>
                   <DialogFooter className="px-2 pb-2">
-                    <Button type="submit" disabled={!personName.trim()} data-testid="button-save-participant" size="lg" className="w-full rounded-2xl h-14 text-lg font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20">
+                    <Button type="submit" disabled={!personName.trim()} data-testid="button-save-participant" size="lg" className="w-full rounded-2xl h-14 text-lg font-semibold bg-gradient-primary">
                       Add Person
                     </Button>
                   </DialogFooter>
@@ -691,7 +692,7 @@ export default function EventDetail() {
                     </div>
                   </div>
                   <DialogFooter className="px-2 pb-2">
-                    <Button type="submit" disabled={!personName.trim()} size="lg" className="w-full rounded-2xl h-14 text-lg font-semibold bg-primary hover:bg-primary/90 text-primary-foreground shadow-lg shadow-primary/20">
+                    <Button type="submit" disabled={!personName.trim()} size="lg" className="w-full rounded-2xl h-14 text-lg font-semibold bg-gradient-primary">
                       Save Changes
                     </Button>
                   </DialogFooter>
@@ -703,7 +704,7 @@ export default function EventDetail() {
               onClick={openAddExpense}
               disabled={event.participants.length === 0}
               data-testid="button-add-expense"
-              className="rounded-full shadow-lg shadow-primary/20 transition-all hover:scale-105 active:scale-95 bg-foreground text-background hover:bg-foreground/90 h-12 px-6 font-semibold"
+              className="rounded-full bg-gradient-primary px-6 h-12 font-bold"
             >
               <Plus className="w-5 h-5 mr-2" />
               Add Expense
@@ -714,29 +715,29 @@ export default function EventDetail() {
         {event.expenses.length > 0 && (
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-10">
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.1 }}>
-              <Card className="glass-card rounded-3xl border-none overflow-hidden relative group">
+              <Card className="glass-card rounded-[32px] border-none overflow-hidden relative group">
                 <div className="absolute inset-0 bg-gradient-to-br from-indigo-500/5 to-purple-500/5 pointer-events-none transition-opacity group-hover:opacity-100 opacity-50"></div>
                 <CardContent className="p-6 sm:p-8 flex flex-col justify-center h-full relative z-10">
                   <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">Total Spent</p>
-                  <p className="text-4xl font-black tracking-tighter text-foreground">{formatCurrency(totalSpent)}</p>
+                  <CountUp className="text-4xl font-black tracking-tighter text-foreground" value={totalSpent} />
                 </CardContent>
               </Card>
             </motion.div>
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.15 }}>
-              <Card className="glass-card rounded-3xl border-none overflow-hidden relative group">
+              <Card className="glass-card rounded-[32px] border-none overflow-hidden relative group">
                 <div className="absolute inset-0 bg-gradient-to-br from-blue-500/5 to-cyan-500/5 pointer-events-none transition-opacity group-hover:opacity-100 opacity-50"></div>
                 <CardContent className="p-6 sm:p-8 flex flex-col justify-center h-full relative z-10">
                   <p className="text-xs font-bold uppercase tracking-widest text-muted-foreground mb-2">People</p>
-                  <p className="text-4xl font-black tracking-tighter text-foreground">{event.participants.length}</p>
+                  <CountUp className="text-4xl font-black tracking-tighter text-foreground" value={event.participants.length} decimals={0} prefix="" />
                 </CardContent>
               </Card>
             </motion.div>
             <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.3, delay: 0.2 }}>
-              <Card className="glass-card rounded-3xl border-none overflow-hidden relative group bg-primary/5 dark:bg-primary/10">
+              <Card className="glass-card rounded-[32px] border-none overflow-hidden relative group bg-primary/5 dark:bg-primary/10">
                 <div className="absolute inset-0 bg-gradient-to-br from-primary/10 to-transparent pointer-events-none transition-opacity group-hover:opacity-100 opacity-50"></div>
                 <CardContent className="p-6 sm:p-8 flex flex-col justify-center h-full relative z-10">
                   <p className="text-xs font-bold uppercase tracking-widest text-primary mb-2">Avg. Fair Share</p>
-                  <p className="text-4xl font-black tracking-tighter text-primary">{formatCurrency(fairShare)}</p>
+                  <CountUp className="text-4xl font-black tracking-tighter text-primary" value={fairShare} />
                 </CardContent>
               </Card>
             </motion.div>
@@ -933,15 +934,11 @@ export default function EventDetail() {
                             <div className="space-y-3 mb-6 flex-grow">
                               <div className="flex items-center justify-between text-sm">
                                 <span className="font-semibold text-muted-foreground uppercase tracking-wide text-xs">Total Paid</span>
-                                <span className="font-bold text-foreground">
-                                  {formatCurrency(b.totalPaid)}
-                                </span>
+                                <CountUp className="font-bold text-foreground" value={b.totalPaid} />
                               </div>
                               <div className="flex items-center justify-between text-sm">
                                 <span className="font-semibold text-muted-foreground uppercase tracking-wide text-xs">Fair Share</span>
-                                <span className="font-bold text-foreground">
-                                  {formatCurrency(b.totalOwed)}
-                                </span>
+                                <CountUp className="font-bold text-foreground" value={b.totalOwed} />
                               </div>
                             </div>
 
