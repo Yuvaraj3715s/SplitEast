@@ -28,6 +28,8 @@ export interface Expense {
   splitMethod: SplitMethod;
   participantIds: string[];
   participants: ExpenseParticipant[];
+  category?: string;
+  receiptImage?: string;
 }
 
 export type SettlementStatus = "paid";
@@ -49,6 +51,10 @@ export interface Event {
   participants: Participant[];
   expenses: Expense[];
   settlements: SettlementRecord[];
+  icon?: string;
+  color?: string;
+  currency?: string;
+  description?: string;
 }
 
 const STORAGE_KEY = "expense-splitter-events";
@@ -92,6 +98,8 @@ function migrateExpense(raw: any, allParticipantIds: string[]): Expense {
     splitMethod,
     participantIds,
     participants,
+    category: typeof raw.category === "string" ? raw.category : undefined,
+    receiptImage: typeof raw.receiptImage === "string" ? raw.receiptImage : undefined,
   };
 }
 
@@ -133,7 +141,29 @@ function migrateEvent(raw: any): Event {
     participants,
     expenses,
     settlements,
+    icon: typeof raw.icon === "string" ? raw.icon : undefined,
+    color: typeof raw.color === "string" ? raw.color : undefined,
+    currency: typeof raw.currency === "string" ? raw.currency : undefined,
+    description: typeof raw.description === "string" ? raw.description : undefined,
   };
+}
+
+export function exportAllData(): string {
+  const events = getEvents();
+  return JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), events }, null, 2);
+}
+
+export function importAllData(json: string): { success: boolean; count: number; error?: string } {
+  try {
+    const parsed = JSON.parse(json);
+    const rawEvents = Array.isArray(parsed) ? parsed : Array.isArray(parsed.events) ? parsed.events : null;
+    if (!rawEvents) return { success: false, count: 0, error: "Invalid file format." };
+    const migrated = rawEvents.map(migrateEvent);
+    saveEvents(migrated);
+    return { success: true, count: migrated.length };
+  } catch (e) {
+    return { success: false, count: 0, error: "Could not parse file." };
+  }
 }
 
 export function getEvents(): Event[] {

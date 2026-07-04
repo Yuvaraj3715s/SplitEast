@@ -1,0 +1,236 @@
+You are improving an already working expense splitting application called SplitEasy.
+
+IMPORTANT:
+- DO NOT change any existing business logic.
+- DO NOT change calculations.
+- DO NOT remove any features.
+- DO NOT break the application.
+- ONLY improve UI, UX and add requested features.
+
+========================
+PREMIUM UI
+========================
+
+Use modern design inspired by:
+
+- Apple Wallet
+- CRED
+- Material You
+- Notion
+
+Improve:
+
+• Better Glassmorphism
+• Better gradients
+• Better shadows
+• Better spacing
+• Better typography
+• Larger headings
+• Better cards
+• Animated hover effects
+• Framer Motion animations
+• Skeleton loading
+• Smooth transitions
+• Better dialogs
+• Better forms
+
+========================
+THEMES
+========================
+
+Create a beautiful Settings page.
+
+Themes:
+
+• Light
+• Dark
+• AMOLED
+• Ocean
+• Forest
+• Sunset
+• Lavender
+
+Follow System Theme.
+
+Store preferences in localStorage.
+
+========================
+CURRENCY
+========================
+
+Add support for multiple currencies.
+
+Default currency from Settings.
+
+Each Event should also have its own currency.
+
+Supported:
+
+INR
+USD
+EUR
+GBP
+JPY
+AED
+CAD
+AUD
+SGD
+CHF
+CNY
+
+Use Intl.NumberFormat throughout the app.
+
+========================
+EVENTS
+========================
+
+Each event should support:
+
+Emoji/Icon
+
+Accent color
+
+Currency
+
+Description
+
+========================
+STATISTICS
+========================
+
+Add beautiful statistics.
+
+Animated counters
+
+Circular expense chart
+
+Who paid most
+
+Largest expense
+
+Total expenses
+
+Average share
+
+========================
+SETTLEMENTS
+========================
+
+Improve settlement screen.
+
+Show:
+
+Who owes whom.
+
+Amount.
+
+Mark as Paid button.
+
+Settlement history.
+
+========================
+SEARCH
+========================
+
+Global search.
+
+Search by:
+
+Expense
+
+Person
+
+Category
+
+========================
+FILTERS
+========================
+
+Today
+
+Week
+
+Month
+
+Category
+
+Paid By
+
+Amount
+
+========================
+CATEGORIES
+========================
+
+Food
+
+Travel
+
+Shopping
+
+Hotel
+
+Fuel
+
+Medical
+
+Entertainment
+
+Education
+
+Other
+
+========================
+RECEIPTS
+========================
+
+Allow image attachment for expenses.
+
+========================
+BOTTOM NAVIGATION
+========================
+
+Floating glass bottom navigation.
+
+Home
+
+Events
+
+Statistics
+
+Settings
+
+Animated active tab.
+
+========================
+FLOATING ACTION BUTTON
+========================
+
+Premium floating Add Expense button.
+
+========================
+MOBILE EXPERIENCE
+========================
+
+Swipe gestures.
+
+Haptic feedback.
+
+Pull to refresh.
+
+Offline PWA support.
+
+========================
+DATA
+========================
+
+Export
+
+Import
+
+Backup
+
+Restore
+
+========================
+Keep all existing functionality working exactly as before.

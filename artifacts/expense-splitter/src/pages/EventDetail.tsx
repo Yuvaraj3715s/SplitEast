@@ -8,12 +8,47 @@ import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, UserPlus, Trash2, Edit2, Receipt, ArrowRight, Users, Plus, ListChecks, Lock, Unlock, CheckCircle2, Circle, Undo2, PlusCircle, Filter, PartyPopper, Calendar, Wallet } from "lucide-react";
+import { ArrowLeft, UserPlus, Trash2, Edit2, Receipt, ArrowRight, Users, Plus, ListChecks, Lock, Unlock, CheckCircle2, Circle, Undo2, PlusCircle, Filter, PartyPopper, Calendar, Wallet, Image as ImageIcon, X, Search } from "lucide-react";
 import { getEvents, saveEvents, Event, Participant, Expense, SplitMethod, PaymentMethod, ExpenseParticipant, SettlementRecord } from "@/lib/storage";
 import { calculateBalances, calculateSettlements, getExpenseShares, getExpensePayments, applySettlements, distributeEqually, formatCurrency, Settlement } from "@/lib/calculations";
 import { motion, AnimatePresence } from "framer-motion";
-import { format } from "date-fns";
+import { format, isToday, isThisWeek, isThisMonth } from "date-fns";
 import { CountUp } from "@/components/ui/count-up";
+import { CATEGORIES, getCategoryInfo } from "@/lib/categories";
+import { CURRENCIES, formatMoney } from "@/lib/currency";
+import { useAppSettings } from "@/lib/theme-context";
+import { vibrate } from "@/lib/haptics";
+import { useToast } from "@/hooks/use-toast";
+
+function resizeImageToDataUrl(file: File, maxSize = 800, quality = 0.7): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new window.Image();
+      img.onload = () => {
+        let { width, height } = img;
+        if (width > height && width > maxSize) {
+          height = Math.round((height * maxSize) / width);
+          width = maxSize;
+        } else if (height > maxSize) {
+          width = Math.round((width * maxSize) / height);
+          height = maxSize;
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return reject(new Error("Canvas not supported"));
+        ctx.drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      };
+      img.onerror = reject;
+      img.src = String(reader.result);
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
 
 function getInitials(name: string): string {
   const parts = name.trim().split(/\s+/);
@@ -74,6 +109,20 @@ export default function EventDetail() {
   const [expensePercentages, setExpensePercentages] = useState<Record<string, number>>({});
   const [lockedPercentageIds, setLockedPercentageIds] = useState<string[]>([]);
   const [expenseError, setExpenseError] = useState("");
+  const [expenseCategory, setExpenseCategory] = useState<string>("other");
+  const [expenseReceiptImage, setExpenseReceiptImage] = useState<string | undefined>(undefined);
+
+  const [expenseSearch, setExpenseSearch] = useState("");
+  const [expenseFilterCategory, setExpenseFilterCategory] = useState<string>("all");
+  const [expenseFilterPaidBy, setExpenseFilterPaidBy] = useState<string>("all");
+  const [expenseFilterPeriod, setExpenseFilterPeriod] = useState<"all" | "today" | "week" | "month">("all");
+  const [expenseFilterMinAmount, setExpenseFilterMinAmount] = useState<string>("");
+  const [receiptPreview, setReceiptPreview] = useState<string | null>(null);
+
+  const { settings } = useAppSettings();
+  const { toast } = useToast();
+  const eventCurrency = event?.currency || settings.defaultCurrency;
+  const money = (amount: number) => formatMoney(amount, eventCurrency);
 
   const [settlementFilterStatus, setSettlementFilterStatus] = useState<"all" | "pending" | "paid">("all");
   const [settlementFilterPerson, setSettlementFilterPerson] = useState<string>("all");
@@ -200,6 +249,8 @@ export default function EventDetail() {
     setExpensePercentages(equalPercentages(allIds));
     setLockedPercentageIds([]);
     setExpenseError("");
+    setExpenseCategory("other");
+    setExpenseReceiptImage(undefined);
     setEditingExpense(null);
   };
 
@@ -234,6 +285,8 @@ export default function EventDetail() {
     );
     setLockedPercentageIds([]);
     setExpenseError("");
+    setExpenseCategory(expense.category || "other");
+    setExpenseReceiptImage(expense.receiptImage);
     setIsExpenseOpen(true);
   };
 
