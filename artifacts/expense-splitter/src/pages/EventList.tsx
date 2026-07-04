@@ -8,11 +8,13 @@ import { Label } from "@/components/ui/label";
 import { format } from "date-fns";
 import { Plus, Trash2, Calendar, Users, Wallet, Sparkles } from "lucide-react";
 import { getEvents, saveEvents, Event } from "@/lib/storage";
-import { formatCurrency } from "@/lib/calculations";
+import { formatMoney } from "@/lib/currency";
+import { useAppSettings } from "@/lib/theme-context";
 import { motion, AnimatePresence } from "framer-motion";
 import { CountUp } from "@/components/ui/count-up";
 
 export default function EventList() {
+  const { settings } = useAppSettings();
   const [events, setEvents] = useState<Event[]>([]);
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [newEventName, setNewEventName] = useState("");
@@ -178,7 +180,7 @@ export default function EventList() {
                             <div>
                               <p className="text-sm font-bold uppercase tracking-widest text-muted-foreground/80 mb-1">Total Spent</p>
                               <div className="flex items-baseline gap-1">
-                                <CountUp className="text-4xl font-black tracking-tighter text-foreground" value={totalSpent} />
+                                <span className="text-4xl font-black tracking-tighter text-foreground">{formatMoney(totalSpent, settings.defaultCurrency)}</span>
                               </div>
                             </div>
                             <div className="flex items-center bg-background/50 backdrop-blur-md px-3 py-1.5 rounded-full border border-white/20 dark:border-white/5">
